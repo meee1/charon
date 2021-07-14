@@ -1,0 +1,66 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ master, dev ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: configure
+      run: |
+         set -e
+         sudo apt-get update
+         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
+         sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl-dev mtools
+         sudo apt-get install bc python cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev
+         git clone --recursive https://github.com/analogdevicesinc/plutosdr-fw.git
+         cd plutosdr-fw
+         export CROSS_COMPILE=arm-linux-gnueabihf-
+         export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
+         export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
+
+
+         
+          git clone https://github.com/meee1/charon.git
+          cp -fr charon/changes_to_plutosdr_fw_configs_rel_to_v28/* .
+
+          make -C linux ARCH=arm zynq_pluto_defconfig
+          
+         make
+
+          cd buildroot
+          make zynq_pluto_defconfig
+          make batctl || true
+          make bridge-utils || true
+          rm -fr output/build/fftw-3.3.7/
+          make fftw || true
+          make iperf3 || true
+          make iproute2 || true
+          make liquid-dsp || true
+          make tunctl || true
+          rm -fr output/build/util-linux-2.31.1/
+          make util-linux || true
+          cd ..
+
+
+          cd charon
+          mkdir third_party
+          cd third_party
+          git clone https://github.com/tvelliott/libtuntap.git
+          git clone https://github.com/tvelliott/libfec.git
+          cd ..
+          make clean
+          make
+          cp third_party/libfec/*.so ../buildroot/output/target/usr/lib
+          cp charon ../buildroot/output/target/usr/bin
+          cd ..
+          make
+
+
