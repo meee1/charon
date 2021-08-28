@@ -22,6 +22,7 @@ jobs:
          sudo apt-get install bc python cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev
          git clone --recursive https://github.com/analogdevicesinc/plutosdr-fw.git
          cd plutosdr-fw
+         git checkout d84126530810a8d7db0da16171d5292ce101a18c
          export CROSS_COMPILE=arm-linux-gnueabihf-
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
