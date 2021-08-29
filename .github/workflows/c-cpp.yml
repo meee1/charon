@@ -15,7 +15,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: configure
       run: |
-         set -e
+         set -x
          sudo apt-get update
          sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
          sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl-dev mtools
