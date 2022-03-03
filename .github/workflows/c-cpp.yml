@@ -26,7 +26,7 @@ jobs:
          cd plutosdr-fw
          cp -fr ../changes_to_plutosdr_fw_configs_rel_to_v28/* .
          
-         sed -i 's~minor_max=29~minor_max=30~' buildroot\support\dependencies\check-host-tar.sh
+         sed -i 's~minor_max=29~minor_max=30~' buildroot/support/dependencies/check-host-tar.sh
           
     - name: configure zynq_pluto_defconfig
       run: |
