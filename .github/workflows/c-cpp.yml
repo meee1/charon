@@ -23,10 +23,13 @@ jobs:
     - name: configure plutosdr-fw
       run: |
          set -x
-         git clone --recursive https://github.com/analogdevicesinc/plutosdr-fw.git
+         mkdir plutosdr-fw
          cd plutosdr-fw
+         git init
+         git remote add origin https://github.com/analogdevicesinc/plutosdr-fw.git
+         git fetch --depth=1 origin +d84126530810a8d7db0da16171d5292ce101a18c
          git checkout d84126530810a8d7db0da16171d5292ce101a18c
-         git submodule update --init --recursive
+         git submodule update --init --recursive --depth=1
          export CROSS_COMPILE=arm-linux-gnueabihf-
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
