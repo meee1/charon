@@ -13,29 +13,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+      with:
+         submodules: recursive
     - name: apt-get
       run: |
          set -x
          sudo apt-get update
-         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
-         sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl-dev mtools
-         sudo apt-get install bc python cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev
+         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev
     - name: configure plutosdr-fw
       run: |
          set -x
-         mkdir plutosdr-fw
          cd plutosdr-fw
-         git init
-         git remote add origin https://github.com/analogdevicesinc/plutosdr-fw.git
-         git fetch --depth=1 origin +d84126530810a8d7db0da16171d5292ce101a18c
-         git checkout d84126530810a8d7db0da16171d5292ce101a18c
-         git submodule update --init --recursive --depth=1
-         export CROSS_COMPILE=arm-linux-gnueabihf-
-         export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
-         export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
-
-         git clone https://github.com/meee1/charon.git
-         cp -fr charon/changes_to_plutosdr_fw_configs_rel_to_v28/* .
+         cp -fr ../changes_to_plutosdr_fw_configs_rel_to_v28/* .
           
     - name: configure zynq_pluto_defconfig
       run: |
@@ -54,32 +43,32 @@ jobs:
          export CROSS_COMPILE=arm-linux-gnueabihf-
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
-
-          cd buildroot
-          make batctl 
-          make bridge-utils 
-          rm -fr output/build/fftw-3.3.7/
-          make fftw 
-          make iperf3 
-          make iproute2 
-          make liquid-dsp 
-          make tunctl
-          rm -fr output/build/util-linux-2.31.1/
-          make util-linux
-          cd ..
-
-
-          cd charon
-          mkdir third_party
-          cd third_party
-          git clone https://github.com/tvelliott/libtuntap.git
-          git clone https://github.com/tvelliott/libfec.git
-          cd ..
-          make clean
-          make
-          cp third_party/libfec/*.so ../buildroot/output/target/usr/lib
-          cp charon ../buildroot/output/target/usr/bin
-          cd ..
-          make
+         
+         cd buildroot
+         make batctl 
+         make bridge-utils 
+         rm -fr output/build/fftw-3.3.7/
+         make fftw 
+         make iperf3 
+         make iproute2 
+         make liquid-dsp 
+         make tunctl
+         rm -fr output/build/util-linux-2.31.1/
+         make util-linux
+         cd ..
+         
+         
+         cd charon
+         mkdir third_party
+         cd third_party
+         git clone https://github.com/tvelliott/libtuntap.git
+         git clone https://github.com/tvelliott/libfec.git
+         cd ..
+         make clean
+         make
+         cp third_party/libfec/*.so ../buildroot/output/target/usr/lib
+         cp charon ../buildroot/output/target/usr/bin
+         cd ..
+         make
 
 
