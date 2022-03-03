@@ -25,6 +25,8 @@ jobs:
          set -x
          cd plutosdr-fw
          cp -fr ../changes_to_plutosdr_fw_configs_rel_to_v28/* .
+         
+         sed -i 's~minor_max=29~minor_max=30~' buildroot\support\dependencies\check-host-tar.sh
           
     - name: configure zynq_pluto_defconfig
       run: |
@@ -36,7 +38,7 @@ jobs:
          
          git tag v0.28
          
-          make -C linux ARCH=arm zynq_pluto_defconfig
+         make -C linux ARCH=arm zynq_pluto_defconfig
 
     - name: configure buildroot
       run: |
