@@ -34,6 +34,8 @@ jobs:
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
          
+         git tag v0.28
+         
           make -C linux ARCH=arm zynq_pluto_defconfig
 
     - name: configure buildroot
