@@ -1,0 +1,9 @@
+[submodule "plutosdr-fw"]
+	path = plutosdr-fw
+	url = https://github.com/analogdevicesinc/plutosdr-fw.git
+[submodule "third_party/libtuntap"]
+	path = third_party/libtuntap
+	url = https://github.com/tvelliott/libtuntap.git
+[submodule "third_party/libfec"]
+	path = third_party/libfec
+	url = https://github.com/tvelliott/libfec.git
