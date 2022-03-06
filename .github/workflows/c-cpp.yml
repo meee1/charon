@@ -27,7 +27,7 @@ jobs:
          cp -fr ../changes_to_plutosdr_fw_configs_rel_to_v28/* .
          
          sed -i 's~minor_max=29~minor_max=30~' buildroot/support/dependencies/check-host-tar.sh         
-         sed -i 's~arm-xilinx-linux-gnueabi~arm-linux-gnueabihf~' buildroot/configs/zynq_pluto_defconfig
+         sed -i 's~arm-xilinx-linux-gnueabi~arm-none-linux-gnueabihf~' buildroot/configs/zynq_pluto_defconfig
           
     - name: configure zynq_pluto_defconfig
       run: |
@@ -45,9 +45,19 @@ jobs:
       run: |
          set -x
          cd plutosdr-fw
-         export CROSS_COMPILE=arm-linux-gnueabihf-
+         export CROSS_COMPILE=arm-none-linux-gnueabihf
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
+         
+         wget -N --quiet https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf.tar.xz
+         
+         tar -xf gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf.tar.xz
+         
+         ls -al
+                  
+         export PATH=`pwd`/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf:$PATH
+         
+         
          
          which ${CROSS_COMPILE}gcc
          
