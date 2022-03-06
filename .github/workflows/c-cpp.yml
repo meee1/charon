@@ -27,7 +27,7 @@ jobs:
          cp -fr ../changes_to_plutosdr_fw_configs_rel_to_v28/* .
          
          sed -i 's~minor_max=29~minor_max=30~' buildroot/support/dependencies/check-host-tar.sh         
-         sed -i 's~arm-xilinx-linux-gnueabi~arm-none-linux-gnueabihf~' buildroot/configs/zynq_pluto_defconfig
+         sed -i 's~arm-xilinx-linux-gnueabi~arm-linux-gnueabihf~' buildroot/configs/zynq_pluto_defconfig
           
     - name: configure zynq_pluto_defconfig
       run: |
