@@ -39,7 +39,7 @@ jobs:
          
          git tag v0.28
          
-         make -C linux ARCH=arm zynq_pluto_defconfig
+         #make -C linux ARCH=arm zynq_pluto_defconfig
 
     - name: configure buildroot
       run: |
@@ -48,6 +48,8 @@ jobs:
          export CROSS_COMPILE=arm-linux-gnueabihf-
          export PATH=$PATH:/opt/Xilinx/SDK/2019.1/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
          export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2019.1/settings64.sh
+         
+         which ${CROSS_COMPILE}gcc
          
          make -j8 pluto.frm
          
