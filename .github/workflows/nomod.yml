@@ -55,10 +55,13 @@ jobs:
          make
          
          cd ..
+         # fix the compiler
          sed -i 's~arm-xilinx-linux-gnueabi-gcc~arm-linux-gnueabihf-gcc~' third_party/libtuntap/build_tun.sh
          sed -i 's~arm-xilinx-linux-gnueabi-ar~arm-linux-gnueabihf-ar~' third_party/libtuntap/build_tun.sh
-         
+         # fix the paths
          sed -i 's~../../../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/~../../plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/~' third_party/libtuntap/build_tun.sh
+         # fix the include order
+         sed -i '1s~^~#include <net/ethernet.h>\n~' third_party/libtuntap/tuntap-unix-linux.c
          
          cd third_party/libtuntap && sh ./build_tun.sh && cd .. && cd ..
          
