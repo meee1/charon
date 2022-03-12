@@ -4,7 +4,7 @@ DIRS ?= .
 
 ARCH=arm
 
-FLAGS ?= -O3 -std=c99 -I./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/\
+FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/\
          --sysroot=./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
         -I./third_party/libtuntap/
 
