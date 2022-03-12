@@ -1,4 +1,4 @@
-NAME ?= charon
+NAME = charon
 SUFFIX ?= .c
 DIRS ?= .
 
