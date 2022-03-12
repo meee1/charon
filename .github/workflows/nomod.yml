@@ -39,31 +39,23 @@ jobs:
                   
          which ${CROSS_COMPILE}gcc
          
-         make clean
-         
          make -j8 pluto.frm
          
          cd buildroot
          make batctl 
          make bridge-utils 
-         rm -fr output/build/fftw-3.3.7/
-         make fftw 
+         #rm -fr output/build/fftw-3.3.7/
+         #make fftw 
          make iperf3 
          make iproute2 
          make liquid-dsp 
          make tunctl
-         rm -fr output/build/util-linux-2.31.1/
+         #rm -fr output/build/util-linux-2.31.1/
          make util-linux
          cd ..
          
-         
-         cd charon
-         mkdir third_party
-         cd third_party
-         git clone https://github.com/tvelliott/libtuntap.git
-         git clone https://github.com/tvelliott/libfec.git
          cd ..
-         make clean
+         
          make
          cp third_party/libfec/*.so ../buildroot/output/target/usr/lib
          cp charon ../buildroot/output/target/usr/bin

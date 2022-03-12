@@ -3,17 +3,15 @@ SUFFIX ?= .c
 DIRS ?= .
 
 ARCH=arm
-VIVADO_SETTINGS ?= /opt/Xilinx/Vivado/2016.4/settings64.sh
-HAVE_VIVADO= $(shell bash -c "source $(VIVADO_SETTINGS) > /dev/null 2>&1 && vivado -version > /dev/null 2>&1 && echo 1 || echo 0")
 
-FLAGS ?= -O3 -std=c99 -I../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/usr/include/\
-         --sysroot=../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/\
+FLAGS ?= -O3 -std=c99 -I./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/\
+         --sysroot=./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
         -I./third_party/libtuntap/
 
-SYSROOT ?= ../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/
+SYSROOT ?= ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 LDFLAGS ?= --sysroot=/opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc\
-           -L ../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/\
+           -L ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
            -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc\
            -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc/lib\
            -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc/usr/lib \
@@ -67,6 +65,7 @@ endif
 
 $(OUT_DIR)/%.o: %$(SUFFIX)
 	@mkdir -p $(dir $@)
+	@echo $(COMPILER) $(CXXFLAGS) $(FLAGS)
 	@$(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@
 
 clean:
