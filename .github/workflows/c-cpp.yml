@@ -59,6 +59,8 @@ jobs:
                   
          which ${CROSS_COMPILE}gcc
          
+         make clean
+         
          make -j8 pluto.frm
          
          cd buildroot
