@@ -37,7 +37,7 @@ jobs:
          set -x
          cd plutosdr-fw
          
-         git tag v0.28
+         git tag v0.28 || true
          
          #make -C linux ARCH=arm zynq_pluto_defconfig
 
