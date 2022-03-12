@@ -27,6 +27,8 @@ jobs:
          cd plutosdr-fw
          export CROSS_COMPILE=arm-linux-gnueabihf-
          
+         git tag v0.34 || true
+         
          wget -N --quiet "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.2-2018.08/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf.tar.xz"
          
          tar -xf gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf.tar.xz
