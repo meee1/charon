@@ -54,9 +54,11 @@ jobs:
          make util-linux
          cd ..
          
-         cd ..
+
          
          make
+         
+         cd ..
          cp third_party/libfec/*.so ../buildroot/output/target/usr/lib
          cp charon ../buildroot/output/target/usr/bin
          cd ..
