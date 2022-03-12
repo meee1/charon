@@ -70,5 +70,11 @@ jobs:
          cp charon ./plutosdr-fw/buildroot/output/target/usr/bin
          cd plutosdr-fw
          make
+         
+         rm build/legal-info*
 
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v3.0.0
+      with:
+        path: plutosdr-fw/build
 
