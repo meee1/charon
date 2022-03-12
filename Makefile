@@ -10,11 +10,11 @@ FLAGS ?= -O3 -std=c99 -I./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-
 
 SYSROOT ?= ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
-LDFLAGS ?= --sysroot=/opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc\
+LDFLAGS ?= --sysroot=./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc\
            -L ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
-           -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc\
-           -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc/lib\
-           -L /opt/Xilinx/SDK/2016.4/gnu/arm/lin/arm-xilinx-linux-gnueabi/libc/usr/lib \
+           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc\
+           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc/lib\
+           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc/usr/lib \
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
            -L$(SYSROOT) -L$(SYSROOT)lib -L$(SYSROOT)usr -L$(SYSROOT)usr/lib \
