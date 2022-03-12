@@ -52,6 +52,8 @@ jobs:
          make util-linux
          cd ..
          
+         make
+         
          cd ..
          sed -i 's~arm-xilinx-linux-gnueabi-gcc~arm-linux-gnueabihf-gcc~' third_party/libtuntap/build_tun.sh
          sed -i 's~arm-xilinx-linux-gnueabi-ar~arm-linux-gnueabihf-ar~' third_party/libtuntap/build_tun.sh
