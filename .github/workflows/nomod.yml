@@ -39,6 +39,8 @@ jobs:
                   
          which ${CROSS_COMPILE}gcc
          
+         make
+         
          cd buildroot
          make batctl 
          make bridge-utils 
