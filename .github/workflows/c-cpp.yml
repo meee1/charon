@@ -56,9 +56,7 @@ jobs:
          ls -al
                   
          export PATH=`pwd`/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/bin:$PATH
-         
-         
-         
+                  
          which ${CROSS_COMPILE}gcc
          
          make -j8 pluto.frm
