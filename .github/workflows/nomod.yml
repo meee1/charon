@@ -14,13 +14,20 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-         submodules: recursive
+         submodules: recursive                
     - name: apt-get
       run: |
          set -x
          sudo apt-get update
          sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev libc6-armel-cross libc6-dev-armel-cross binutils-arm-linux-gnueabi libncurses5-dev build-essential bison flex libssl-dev bc
-
+    - name: Cache
+      uses: actions/cache@v2.1.7
+      with:
+        # A list of files, directories, and wildcard patterns to cache and restore
+        path: plutosdr-fw/buildroot/dl/
+        # An explicit key for restoring and saving the cache
+        key: plutodl
+        
     - name: configure buildroot
       run: |
          set -x
