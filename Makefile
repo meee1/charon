@@ -18,7 +18,7 @@ LDFLAGS ?= --sysroot=./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabih
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
            -L$(SYSROOT) -L$(SYSROOT)lib -L$(SYSROOT)usr -L$(SYSROOT)usr/lib \
-           -lliquid -liio -lad9361 -lc -lm -lfftw3 -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 -lfec -ltuntap
+           -lliquid -liio -lad9361 -lc -lm -lfftw3 -lfftw3f -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 -lfec -ltuntap
 
 PLATFORM := $(shell uname -s)
 
