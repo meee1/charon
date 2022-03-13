@@ -47,7 +47,7 @@ jobs:
          make batctl 
          make bridge-utils 
          #rm -fr output/build/fftw-3.3.7/
-         make fftw         
+         make fftw-double         
          make iperf3 
          make iproute2 
          make liquid-dsp 
