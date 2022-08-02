@@ -37,7 +37,7 @@ jobs:
       run: |
          set -x
          cd plutosdr-fw
-         export CROSS_COMPILE="ccache arm-linux-gnueabihf-"
+         export CROSS_COMPILE="arm-linux-gnueabihf-"
          
          git tag v0.34 || true
          
