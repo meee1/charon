@@ -28,6 +28,11 @@ jobs:
         # An explicit key for restoring and saving the cache
         key: plutodl
         
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ccache-${{ runner.os }}
+        
     - name: configure buildroot
       run: |
          set -x
@@ -46,7 +51,7 @@ jobs:
          
          sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig
          
-         echo CONFIG_TUN=y >> buildroot/configs/zynq_pluto_defconfig
+         echo CONFIG_TUN=y >> arch/arm/configs/zynq_pluto_defconfig
                   
          which ${CROSS_COMPILE}gcc
          
