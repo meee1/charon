@@ -46,11 +46,6 @@ jobs:
          tar -xf gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf.tar.xz
          
          ls -al
-         
-         ln -s /usr/bin/ccache /usr/local/bin/arm-linux-gnueabihf-gcc
-         ln -s /usr/bin/ccache /usr/local/bin/arm-linux-gnueabihf-g++
-         ln -s /usr/bin/ccache /usr/local/bin/arm-linux-gnueabihf-cc
-         ln -s /usr/bin/ccache /usr/local/bin/arm-linux-gnueabihf-c++
                  
          export PATH=/usr/local/bin:`pwd`/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/bin:$PATH
          
