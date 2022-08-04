@@ -55,7 +55,9 @@ jobs:
          echo BR2_CCACHE=y >> buildroot/configs/zynq_pluto_defconfig
          
          echo CONFIG_TUN=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-                  
+         echo CONFIG_BRIDGE=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+         echo CONFIG_BATMAN_ADV=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+
          which ${CROSS_COMPILE}gcc
          
          make V=1
