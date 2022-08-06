@@ -52,6 +52,9 @@ jobs:
          
          sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig
          
+         sed -i 's~.*buildroot legal-info.*~~' Makefile
+         sed -i 's~.*legal_info_html.sh.*~~' Makefile
+         
          echo BR2_CCACHE=y >> buildroot/configs/zynq_pluto_defconfig
          echo BR2_PACKAGE_STRACE=y >> buildroot/configs/zynq_pluto_defconfig
          echo BR2_PACKAGE_WIREGUARD_LINUX_COMPAT=y >> buildroot/configs/zynq_pluto_defconfig
