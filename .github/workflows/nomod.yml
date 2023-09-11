@@ -9,7 +9,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -53,14 +53,14 @@ jobs:
          sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig     
          
          echo BR2_PACKAGE_STRACE=y >> buildroot/configs/zynq_pluto_defconfig
-         echo BR2_PACKAGE_WIREGUARD_LINUX_COMPAT=y >> buildroot/configs/zynq_pluto_defconfig
-         echo BR2_PACKAGE_WIREGUARD_TOOLS=y >> buildroot/configs/zynq_pluto_defconfig
+         #echo BR2_PACKAGE_WIREGUARD_LINUX_COMPAT=y >> buildroot/configs/zynq_pluto_defconfig
+         #echo BR2_PACKAGE_WIREGUARD_TOOLS=y >> buildroot/configs/zynq_pluto_defconfig
          
          echo CONFIG_TUN=y >> linux/arch/arm/configs/zynq_pluto_defconfig
          echo CONFIG_TAP=y >> linux/arch/arm/configs/zynq_pluto_defconfig
          echo CONFIG_BRIDGE=y >> linux/arch/arm/configs/zynq_pluto_defconfig
          echo CONFIG_BATMAN_ADV=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-         echo CONFIG_WIREGUARD=y  >> linux/arch/arm/configs/zynq_pluto_defconfig
+         #echo CONFIG_WIREGUARD=y  >> linux/arch/arm/configs/zynq_pluto_defconfig
 
          which ${CROSS_COMPILE}gcc
          
