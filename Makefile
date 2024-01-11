@@ -4,17 +4,13 @@ DIRS ?= .
 
 ARCH=arm
 
-FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/\
-         --sysroot=./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
-        -I./third_party/libtuntap/
-
 SYSROOT ?= ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
+FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I$(SYSROOT)usr/include/\
+         --sysroot=$(SYSROOT)\
+        -I./third_party/libtuntap/
+
 LDFLAGS ?= --sysroot=$(SYSROOT)\
-           -L ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
-           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc\
-           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc/lib\
-           -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc/usr/lib \
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
            -L$(SYSROOT) -L$(SYSROOT)lib -L$(SYSROOT)usr -L$(SYSROOT)usr/lib \
@@ -60,12 +56,13 @@ $(OUT): $(OBJ)
 ifeq "$(LIBRARY)" "static"
 	@$(AR) rcs $@ $^
 else
+	@echo $(COMPILER) $^ $(LDFLAGS) -o $@
 	@$(COMPILER) $^ $(LDFLAGS) -o $@
 endif
 
 $(OUT_DIR)/%.o: %$(SUFFIX)
 	@mkdir -p $(dir $@)
-	@echo $(COMPILER) $(CXXFLAGS) $(FLAGS)
+	@echo $(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@
 	@$(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@
 
 clean:
