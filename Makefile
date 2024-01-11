@@ -4,7 +4,8 @@ DIRS ?= .
 
 ARCH=arm
 
-SYSROOT ?= ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
+SYSROOT ?= ./plutosdr-fw/buildroot/output/target/
+
 
 FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
