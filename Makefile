@@ -4,7 +4,7 @@ DIRS ?= .
 
 ARCH=arm
 
-SYSROOT ?= ./plutosdr-fw/buildroot/output/target/
+SYSROOT ?=  ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 
 FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I$(SYSROOT)usr/include/\
@@ -12,6 +12,7 @@ FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I$(SYSROOT)usr/include/\
         -I./third_party/libtuntap/
 
 LDFLAGS ?= --sysroot=$(SYSROOT)\
+           -L ./plutosdr-fw/buildroot/output/target/usr/lib\
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
            -L$(SYSROOT) -L$(SYSROOT)lib -L$(SYSROOT)usr -L$(SYSROOT)usr/lib \
