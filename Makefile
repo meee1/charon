@@ -10,7 +10,7 @@ FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I./plutosdr-fw/buildroot/output/host/arm
 
 SYSROOT ?= ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
-LDFLAGS ?= --sysroot=./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc\
+LDFLAGS ?= --sysroot=$(SYSROOT)\
            -L ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/\
            -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc\
            -L ./plutosdr-fw/gcc-arm-8.2-2018.08-x86_64-arm-linux-gnueabihf/arm-linux-gnueabihf/libc/lib\
