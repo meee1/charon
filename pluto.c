@@ -180,10 +180,10 @@ struct iio_context * pluto_init_txrx() {
 
       liquid_firdes_kaiser(h_len,  (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)),  OFDM_TX_STOP_DB,0.0f,h);
       q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
-
+fprintf(stderr, "\firinterp_crcf_create done");
       txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
-      fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
-
+      //fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
+fprintf(stderr, "\iio_device_create_buffer done");
       if (!txbuf) {
           perror("Could not create TX buffer");
           exit(0);
