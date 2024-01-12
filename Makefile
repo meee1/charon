@@ -11,7 +11,7 @@ FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
         -I./third_party/libtuntap/
 
-LDFLAGS ?= --sysroot=$(SYSROOT)\
+LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
            -L ./plutosdr-fw/buildroot/output/target/usr/lib\
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
