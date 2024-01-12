@@ -182,7 +182,7 @@ struct iio_context * pluto_init_txrx() {
       q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
 
       txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
-      //fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
+      fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
 
       if (!txbuf) {
           perror("Could not create TX buffer");
@@ -196,7 +196,7 @@ struct iio_context * pluto_init_txrx() {
         
     }
 
-
+    fprintf(stderr, "\npluto_init_txrx done");
     return ctx;
 }
 
