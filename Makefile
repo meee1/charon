@@ -7,7 +7,7 @@ ARCH=arm
 SYSROOT ?=  ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 
-FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -I$(SYSROOT)usr/include/\
+FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
         -I./third_party/libtuntap/
 
