@@ -111,3 +111,111 @@ jobs:
       with:
         path: plutosdr-fw/build
 
+  build2:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+         submodules: recursive                
+    - name: apt-get
+      run: |
+         set -x
+         sudo apt-get update
+         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python3 cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev libc6-armel-cross libc6-dev-armel-cross binutils-arm-linux-gnueabi libncurses5-dev build-essential bison flex libssl-dev bc
+    - name: Cache
+      uses: actions/cache@v2.1.7
+      with:
+        # A list of files, directories, and wildcard patterns to cache and restore
+        path: plutosdr-fw/buildroot/dl/
+        # An explicit key for restoring and saving the cache
+        key: plutodl
+        
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ccache-${{ runner.os }}
+        
+    - name: configure buildroot
+      env:
+          SKIP_LEGAL: 1
+      run: |
+         set -x -e
+
+          cd plutosdr-fw
+          touch buildroot/board/pluto/msd/LICENSE.html
+          
+          make -C buildroot ARCH=arm zynq_pluto_defconfig
+          make -C buildroot toolchain
+          make -C buildroot libiio
+          make -C buildroot liquid-dsp
+          #make zImage
+          make -C buildroot libad9361-iio
+          make -C buildroot ad936x_ref_cal
+          make -C buildroot libini
+          make -C buildroot zlib
+
+          export PATH=`pwd`/buildroot/output/host/bin:`pwd`/buildroot/output/host/sbin:${PATH}
+          export CROSS_COMPILE="arm-linux-gnueabihf-"
+         
+         git tag v0.34 || true
+
+         sudo update-ccache-symlinks
+         
+         sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig     
+         
+         echo BR2_PACKAGE_STRACE=y >> buildroot/configs/zynq_pluto_defconfig
+         #echo BR2_PACKAGE_WIREGUARD_LINUX_COMPAT=y >> buildroot/configs/zynq_pluto_defconfig
+         #echo BR2_PACKAGE_WIREGUARD_TOOLS=y >> buildroot/configs/zynq_pluto_defconfig
+         
+         echo CONFIG_TUN=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+         echo CONFIG_TAP=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+         echo CONFIG_BRIDGE=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+         echo CONFIG_BATMAN_ADV=y >> linux/arch/arm/configs/zynq_pluto_defconfig
+         echo CONFIG_WIREGUARD=y  >> linux/arch/arm/configs/zynq_pluto_defconfig
+
+         which ${CROSS_COMPILE}gcc
+         
+         cd buildroot
+         make batctl 
+         make bridge-utils 
+         #rm -fr output/build/fftw-3.3.7/
+         make fftw-double 
+         make fftw-single 
+         make iperf3 
+         make iproute2 
+         make liquid-dsp 
+         make tunctl
+         #rm -fr output/build/util-linux-2.31.1/
+         make util-linux
+         cd ..
+
+         
+         cd ..
+         # fix the compiler
+         sed -i 's~arm-xilinx-linux-gnueabi-gcc~arm-linux-gnueabihf-gcc~' third_party/libtuntap/build_tun.sh
+         sed -i 's~arm-xilinx-linux-gnueabi-ar~arm-linux-gnueabihf-ar~' third_party/libtuntap/build_tun.sh
+         # fix the paths
+         sed -i 's~../../../buildroot/output/host/arm-buildroot-linux-gnueabi/sysroot/~../../plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/~' third_party/libtuntap/build_tun.sh
+         # fix the include order
+         sed -i '1s~^~#include <net/ethernet.h>\n~' third_party/libtuntap/tuntap-unix-linux.c
+         
+         cd third_party/libtuntap && sh ./build_tun.sh && cd .. && cd ..
+         
+         cd third_party/libfec && make && cd .. && cd ..
+         
+         make
+         cp third_party/libfec/*.so ./plutosdr-fw/buildroot/output/target/usr/lib
+         cp charon ./plutosdr-fw/buildroot/output/target/usr/bin
+         cd plutosdr-fw
+         make
+         
+         rm build/legal-info*
+         
+
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v3.0.0
+      with:
+        name: build2
+        path: plutosdr-fw/build
