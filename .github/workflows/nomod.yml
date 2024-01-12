@@ -123,7 +123,7 @@ jobs:
       run: |
          set -x
          sudo apt-get update
-         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python3 cpio zip unzip rsync file wget gcc-arm-linux-gnueabihf libiio-dev libc6-armel-cross libc6-dev-armel-cross binutils-arm-linux-gnueabi libncurses5-dev build-essential bison flex libssl-dev bc
+         sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python3 cpio zip unzip rsync file wget libiio-dev libncurses5-dev build-essential bison flex libssl-dev bc
     - name: Cache
       uses: actions/cache@v2.1.7
       with:
