@@ -158,6 +158,7 @@ jobs:
 
           export PATH=`pwd`/buildroot/output/host/bin:`pwd`/buildroot/output/host/sbin:${PATH}
           export CROSS_COMPILE="arm-linux-gnueabihf-"
+export SYSROOT=`pwd`/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
          
          git tag v0.34 || true
 
