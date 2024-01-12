@@ -26,7 +26,7 @@ LDFLAGS=
 
 SHARED_LIB=libfec.so
 
-all: libfec.a $(SHARED_LIB)
+all: libfec.a
 
 test: vtest27 vtest29 vtest39 vtest615 rstest dtest sumsq_test peaktest
 	@echo "Correctness tests:"
