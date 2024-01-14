@@ -78,6 +78,7 @@ tuntap_start(struct device *dev, int mode, int tun) {
 	return 0;
 
 clean:
+	tuntap_log(TUNTAP_LOG_ERR, "tuntap_start clean");
 	if (fd != -1) {
 		(void)close(fd);
 	}
