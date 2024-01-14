@@ -61,7 +61,7 @@ int init_tap_device(void) {
 	char *hwaddr;
 
 	ret = 0;
-  //fprintf(stderr, "\ntuntap init");
+  fprintf(stderr, "\ntuntap init");
 
   dev = tuntap_init();
 
@@ -74,6 +74,7 @@ int init_tap_device(void) {
   }
 
 	if (tuntap_start(dev, TUNTAP_MODE_ETHERNET, TUNTAP_ID_ANY) == -1) {
+		fprintf(stderr, "\ntuntap_start failed");
 		ret = 1;
 		goto clean;
 	}
@@ -126,6 +127,7 @@ int init_tap_device(void) {
   return 0;
 
 clean:
+	fprintf(stderr, "\ntuntap clean");
 	tuntap_destroy(dev);
 	return ret;
 }
