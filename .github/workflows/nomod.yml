@@ -161,7 +161,7 @@ jobs:
          export SYSROOT=`pwd`/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
          
          git tag v0.34 || true
-
+  
          sudo update-ccache-symlinks
          
          sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig     
@@ -196,8 +196,17 @@ jobs:
          cd ..
        
          
-         cd third_party/libtuntap && sh ./build_tun.sh && cd .. && cd ..
-         
+         #cd third_party/libtuntap && sh ./build_tun.sh && cd .. && cd ..
+         cd third_party/libtuntap
+         mkdir build
+         cd build
+         cmake .. -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++
+         make
+         cp lib/*.so* ../../../../plutosdr-fw/buildroot/output/target/usr/lib
+         cd ..
+         cd ..
+         cd ..
+                  
          cd third_party/libfec && make && cd .. && cd ..
          
          make
