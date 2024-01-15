@@ -24,6 +24,7 @@
 #include <strsafe.h>
 
 #include "tuntap.h"
+#include "private.h"
 
 /* From OpenVPN tap driver, common.h */
 #define TAP_CONTROL_CODE(request,method) CTL_CODE(FILE_DEVICE_UNKNOWN, request, method, FILE_ANY_ACCESS)
@@ -52,7 +53,7 @@ formated_error(LPWSTR pMessage, DWORD m, ...) {
     LPWSTR pBuffer = NULL;
 
     va_list args = NULL;
-    va_start(args, pMessage);
+    va_start(args, m);
 
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
                   FORMAT_MESSAGE_ALLOCATE_BUFFER,
@@ -121,7 +122,7 @@ reg_query(char *key_name) {
 			goto clean;
 		}
 		/* If its a tap adapter, its all good */
-		if (strncmp(data, "tap", 3) == 0) {
+		if (strncmp(data, "tap", 3) == 0 || strncmp(data, "root\\tap", 8) == 0) {
 			DWORD type;
 
 			len = sizeof data;
@@ -173,7 +174,7 @@ tuntap_start(struct device *dev, int mode, int tun) {
 
 	deviceid = reg_query(NETWORK_ADAPTERS);
 	snprintf(buf, sizeof buf, "\\\\.\\Global\\%s.tap", deviceid);
-	tun_fd = CreateFile(buf, GENERIC_WRITE | GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM|FILE_FLAG_OVERLAPPED, 0);
+	tun_fd = CreateFile(buf, GENERIC_WRITE | GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, 0);
 	if (tun_fd == TUNFD_INVALID_VALUE) {
 		int errcode = GetLastError();
 
@@ -306,30 +307,118 @@ tuntap_sys_set_ipv6(struct device *dev, t_tun_in6_addr *s, uint32_t mask) {
 
 int
 tuntap_read(struct device *dev, void *buf, size_t size) {
-	DWORD len;
+	OVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(OVERLAPPED));
 
-	if (ReadFile(dev->tun_fd, buf, (DWORD)size, &len, NULL) == 0) {
-		int errcode = GetLastError();
+	BOOL ok = ReadFile(dev->tun_fd, buf, (DWORD)size, NULL, &overlapped);
 
+	int errcode = GetLastError();
+	if (!ok && errcode != ERROR_IO_PENDING) {
 		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
 		return -1;
 	}
 
-	return 0;
+	DWORD len;
+	if (!GetOverlappedResult(dev->tun_fd, &overlapped, &len, TRUE)) {
+		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
+		return -1;
+	}
+
+	return (int)len;
+}
+
+static int
+wait_completion_or_timeout(HANDLE fd, OVERLAPPED *overlapped, int timeout_ms)
+{
+	// An operation is pending (either a read or a write),
+	// so wait until either it completes or the timeout
+	// triggers. If timeout_ms < 0, then don't set a timeout.
+
+	DWORD timeout;
+	if (timeout_ms < 0)
+		timeout = INFINITE;
+	else
+		timeout = timeout_ms;
+
+	DWORD len;
+	BOOL ok = GetOverlappedResultEx(fd, overlapped, &len, timeout, FALSE);
+	if (!ok) {
+		int errcode = GetLastError();
+		if (errcode == ERROR_IO_INCOMPLETE || errcode == WAIT_TIMEOUT) {
+			CancelIo(fd);
+		} else {
+			tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
+		}
+		return -1;
+	}
+
+	return (int)len;
+}
+
+int
+tuntap_read_tm(struct device *dev, void *buf, size_t size, int timeout_ms) {
+	BOOL ok;
+	DWORD len;
+	OVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(overlapped));
+
+	ok = ReadFile(dev->tun_fd, buf, (DWORD)size, &len, &overlapped);
+	if (ok)
+		return (int)len; // Operation resolved immediately
+
+	int errcode = GetLastError();
+	if (errcode != ERROR_IO_PENDING) {
+		// Couldn't start the read operation
+		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
+		return -1;
+	}
+
+	return wait_completion_or_timeout(dev->tun_fd, &overlapped, timeout_ms);
 }
 
 int
 tuntap_write(struct device *dev, void *buf, size_t size) {
-	DWORD len;
+	OVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(OVERLAPPED));
 
-	if (WriteFile(dev->tun_fd, buf, (DWORD)size, &len, NULL) == 0) {
-		int errcode = GetLastError();
+	BOOL ok = WriteFile(dev->tun_fd, buf, (DWORD)size, NULL, &overlapped);
 
+	int errcode = GetLastError();
+	if (!ok && errcode != ERROR_IO_PENDING) {
 		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
 		return -1;
 	}
 
-	return 0;
+	DWORD len;
+	if (!GetOverlappedResult(dev->tun_fd, &overlapped, &len, TRUE)) {
+		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
+		return -1;
+	}
+
+	return (int)len;
+}
+
+
+int
+tuntap_write_tm(struct device *dev, void *buf, size_t size, int timeout_ms) {
+	int errcode;
+	BOOL ok;
+	DWORD len;
+	OVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(overlapped));
+
+	ok = WriteFile(dev->tun_fd, buf, (DWORD)size, &len, &overlapped);
+	if (ok)
+		return (int) len; // Write operation completed immediately
+
+	errcode = GetLastError();
+	if (errcode != ERROR_IO_PENDING) {
+		// Couldn't start write operation at all
+		tuntap_log(TUNTAP_LOG_ERR, (const char *)formated_error(L"%1%0", errcode));
+		return -1;
+	}
+
+	return wait_completion_or_timeout(dev->tun_fd, &overlapped, timeout_ms);
 }
 
 int
@@ -370,4 +459,12 @@ tuntap_set_ifname(struct device *dev, const char *name) {
 	(void)name;
 	tuntap_log(TUNTAP_LOG_NOTICE, "Your system does not support tuntap_set_ifname()");
 	return -1;
+}
+
+char*
+tuntap_get_descr(struct device* dev) {
+	(void)dev;
+	tuntap_log(TUNTAP_LOG_NOTICE,
+		"Your system does not support tuntap_get_descr()");
+	return NULL;
 }

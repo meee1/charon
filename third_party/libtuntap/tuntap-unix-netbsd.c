@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "tuntap.h"
+#include "private.h"
 
 static int
 tuntap_sys_create_dev(struct device *dev, int mode, int tun) {
@@ -103,7 +104,7 @@ tuntap_sys_start_tap(struct device *dev, int tun) {
 	(void)strlcpy(dev->if_name, ifr.ifr_name, sizeof dev->if_name);
 
 	/* Get the interface default values */
-	if (ioctl(fd, SIOCGIFFLAGS, &ifr) == -1) {
+	if (ioctl(dev->ctrl_sock, SIOCGIFFLAGS, &ifr) == -1) {
 		tuntap_log(TUNTAP_LOG_ERR, "Can't get interface values");
 		return -1;
 	}
@@ -298,3 +299,10 @@ tuntap_sys_set_descr(struct device *dev, const char *descr, size_t len) {
 	return -1;
 }
 
+char *
+tuntap_sys_get_descr(struct device *dev) {
+	(void)dev;
+	tuntap_log(TUNTAP_LOG_NOTICE,
+	    "Your system does not support tuntap_get_descr()");
+	return NULL;
+}

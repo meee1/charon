@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "tuntap.h"
+#include "private.h"
 
 int
 tuntap_sys_start(struct device *dev, int mode, int tun) {
@@ -232,3 +233,10 @@ tuntap_sys_set_descr(struct device *dev, const char *descr, size_t len) {
 #endif
 }
 
+char *
+tuntap_sys_get_descr(struct device *dev) {
+	(void)dev;
+	tuntap_log(TUNTAP_LOG_NOTICE,
+	    "Your system does not support tuntap_get_descr()");
+	return NULL;
+}

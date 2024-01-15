@@ -24,11 +24,14 @@
 #include <stdint.h>
 
 #include "tuntap.h"
+#include "private.h"
+
+t_tuntap_log tuntap_log = NULL;
 
 void
 tuntap_log_set_cb(t_tuntap_log cb) {
-    if (cb == NULL)
-        tuntap_log = tuntap_log_default;
+	if (cb == NULL)
+		tuntap_log = tuntap_log_default;
 	tuntap_log = cb;
 }
 
@@ -78,8 +81,8 @@ tuntap_log_hexdump(void *data, size_t size) {
 	for (n = 1; n <= size; n++) {
 		if (n % 16 == 1) {
 			/* store address for this line */
-			snprintf(addrstr, sizeof(addrstr), "%.4lx",
-			    ((uintptr_t)p - (uintptr_t)data) );
+			snprintf(addrstr, sizeof(addrstr), "%.4zx",
+			    (p - (unsigned char *)data) );
 		}
 
 		c = *p;

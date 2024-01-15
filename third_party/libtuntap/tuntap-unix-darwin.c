@@ -34,11 +34,7 @@
 #include <unistd.h>
 
 #include "tuntap.h"
-
-static int
-tuntap_sys_create_dev(struct device *dev, int tun) {
-	return -1;
-}
+#include "private.h"
 
 int
 tuntap_sys_start(struct device *dev, int mode, int tun) {
@@ -52,8 +48,9 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 
 	/* Force creation of the driver if needed or let it resilient */
 	if (mode & TUNTAP_MODE_PERSIST) {
-		mode &= ~TUNTAP_MODE_PERSIST;
-		/* TODO: Call tuntap_sys_create_dev() */
+		tuntap_log(TUNTAP_LOG_NOTICE,
+		    "Your system does not support persistent device");
+		return -1;
 	}
 
         /* Set the mode: tun or tap */
@@ -221,3 +218,10 @@ tuntap_sys_set_descr(struct device *dev, const char *descr, size_t len) {
 	return -1;
 }
 
+char *
+tuntap_sys_get_descr(struct device *dev) {
+	(void)dev;
+	tuntap_log(TUNTAP_LOG_NOTICE,
+	    "Your system does not support tuntap_get_descr()");
+	return NULL;
+}

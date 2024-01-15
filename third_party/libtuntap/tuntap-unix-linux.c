@@ -13,20 +13,17 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#include "tuntap.h"
-#include <netinet/ether.h>
-#include <net/ethernet.h>
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <linux/if.h>
-#include <linux/if_tun.h>
-#include <linux/if_ether.h>
 #include <net/if_arp.h>
+#include <netinet/if_ether.h>
+#include <netinet/in.h>
+
+#include <linux/if_tun.h>
 
 #include <fcntl.h>
 #include <stdint.h>
@@ -35,6 +32,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "tuntap.h"
+#include "private.h"
+
+struct in6_ifreq {
+    struct in6_addr     ifr6_addr;
+    u_int32_t           ifr6_prefixlen;
+    int                 ifr6_ifindex; /* Interface index */
+};
 
 int
 tuntap_sys_start(struct device *dev, int mode, int tun) {
@@ -55,8 +60,7 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 	(void)memset(&ifr, '\0', sizeof ifr);
 	if (mode == TUNTAP_MODE_ETHERNET) {
 		ifr.ifr_flags = IFF_TAP;
-		ifname = "ofdm0";
-		//ifname = "ofdm%i";
+		ifname = "tap%i";
 	} else if (mode == TUNTAP_MODE_TUNNEL) {
 		ifr.ifr_flags = IFF_TUN;
 		ifname = "tun%i";
@@ -79,18 +83,18 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 	}
 
 	/* Set the interface name, if any */
-	//if (tun != TUNTAP_ID_ANY) {
-	//	if (fd > TUNTAP_ID_MAX) {
-	//		return -1;
-	//	}
+	if (tun != TUNTAP_ID_ANY) {
+		if (fd > TUNTAP_ID_MAX) {
+			return -1;
+		}
 		(void)snprintf(ifr.ifr_name, sizeof ifr.ifr_name,
 		    ifname, tun);
 		/* Save interface name *after* SIOCGIFFLAGS */
-	//}
+	}
 
 	/* Configure the interface */
-	if (ioctl(fd, TUNSETIFF , &ifr) == -1) {
-		fprintf(stderr, "\nCan't set interface name");
+	if (ioctl(fd, TUNSETIFF, &ifr) == -1) {
+		tuntap_log(TUNTAP_LOG_ERR, "Can't set interface name");
 		return -1;
 	}
 
@@ -108,8 +112,6 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 	    	return -1;
 	}
 
-  tuntap_sys_set_ifname(dev, "ofdm0\0", 6);
-
 	/* Save flags for tuntap_{up, down} */
 	dev->flags = ifr.ifr_flags;
 
@@ -120,8 +122,8 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 	if (mode == TUNTAP_MODE_ETHERNET) {
 		struct ifreq ifr_hw;
 
-		(void)memcpy(ifr_hw.ifr_name, dev->if_name, sizeof(dev->if_name));
-
+		(void)memcpy(ifr_hw.ifr_name, dev->if_name,
+		    sizeof(dev->if_name));
 		if (ioctl(fd, SIOCGIFHWADDR, &ifr_hw) == -1) {
 			tuntap_log(TUNTAP_LOG_WARN,
 			    "Can't get link-layer address");
@@ -191,23 +193,52 @@ tuntap_sys_set_ipv4(struct device *dev, t_tun_in_addr *s4, uint32_t bits) {
 }
 
 int
-tuntap_sys_set_ipv6(struct device *dev, t_tun_in6_addr *s6, uint32_t bits) {
-	(void)dev;
-	(void)s6;
-	(void)bits;
-	tuntap_log(TUNTAP_LOG_NOTICE, "IPv6 is not implemented on your system");
-	return -1;
+tuntap_sys_set_ipv6(struct device *dev, t_tun_in6_addr *s6, uint32_t prefixLen) {
+	struct ifreq ifr;
+	struct in6_ifreq ifrv6;
+	int fd;
+
+	fd = socket(AF_INET6, SOCK_DGRAM, 0);
+	if (fd == -1) {
+		tuntap_log(TUNTAP_LOG_ERR, "IPv6 is not enabled on your system");
+		return -1;
+	}
+
+	/* Get the ifindex for ipv6 */
+	(void)memset(&ifr, '\0', sizeof ifr);
+	(void)memcpy(ifr.ifr_name, dev->if_name, sizeof dev->if_name);
+	if (ioctl(dev->ctrl_sock, SIOCGIFINDEX, &ifr) == -1) {
+		tuntap_log(TUNTAP_LOG_ERR, "Can't get interface index for IPv6");
+		(void)close(fd);
+		return -1;
+	}
+	(void)memset(&ifrv6, '\0', sizeof ifrv6);
+	ifrv6.ifr6_ifindex = ifr.ifr_ifindex;
+
+	/* Delete previously assigned IPv6 address */
+	(void)ioctl(fd, SIOCDIFADDR, &ifrv6);
+	ifrv6.ifr6_prefixlen = prefixLen;
+	(void)memcpy(&ifrv6.ifr6_addr, s6, sizeof(t_tun_in6_addr));
+
+	/* And finaly set the address, using an AF_INET6 socket */
+	if (ioctl(fd, SIOCSIFADDR, &ifrv6) == -1) {
+		tuntap_log(TUNTAP_LOG_ERR, "Can't set IPv6 address");
+		(void)close(fd);
+		return -1;
+	}
+	(void)close(fd);
+	return 0;
 }
 
 int
 tuntap_sys_set_ifname(struct device *dev, const char *ifname, size_t len) {
 	struct ifreq ifr;
 
+	(void)memset(&ifr, '\0', sizeof ifr);
 	(void)strncpy(ifr.ifr_name, dev->if_name, IF_NAMESIZE);
 	(void)strncpy(ifr.ifr_newname, ifname, len);
 
 	if (ioctl(dev->ctrl_sock, SIOCSIFNAME, &ifr) == -1) {
-		perror(NULL);
 		tuntap_log(TUNTAP_LOG_ERR, "Can't set interface name");
 		return -1;
 	}
@@ -224,3 +255,10 @@ tuntap_sys_set_descr(struct device *dev, const char *descr, size_t len) {
 	return -1;
 }
 
+char *
+tuntap_sys_get_descr(struct device *dev) {
+	(void)dev;
+	tuntap_log(TUNTAP_LOG_NOTICE,
+	    "Your system does not support tuntap_get_descr()");
+	return NULL;
+}

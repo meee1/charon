@@ -29,11 +29,16 @@ class tun
   void down();
   void ip(std::string const &presentation, int netmask);
 
+  //IO
+  int read(void *buf, size_t len);
+  int write(void *buf, size_t len);
+
   // System
   void release();
   void nonblocking(bool);
  private:
   struct device* _dev;
+  bool _started;
 };
 
 class tap
@@ -59,11 +64,16 @@ class tap
   void down();
   void ip(std::string const &presentation, int netmask);
 
+  //IO
+  int read(void *buf, size_t len);
+  int write(void *buf, size_t len);
+
   // System
   void release();
   void nonblocking(bool);
  private:
   struct device* _dev;
+  bool _started;
 };
 
 } /* tuntap */

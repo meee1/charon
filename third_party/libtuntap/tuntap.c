@@ -31,21 +31,22 @@
 #include <ctype.h>
 
 #include "tuntap.h"
+#include "private.h"
 
-static struct device _dev;
+struct device *
+tuntap_init(void) {
+	struct device *dev = NULL;
 
-struct device * tuntap_init(void) {
+	if ((dev = (struct device *)malloc(sizeof(*dev))) == NULL)
+		return NULL;
 
-  struct device *dev = &_dev;
-
-	//(void)memset(dev->if_name, '\0', sizeof dev->if_name);
-	//(void)memset(dev->hwaddr, '\0', sizeof dev->hwaddr);
+	(void)memset(dev->if_name, '\0', sizeof dev->if_name);
+	(void)memset(dev->hwaddr, '\0', sizeof dev->hwaddr);
 	dev->tun_fd = TUNFD_INVALID_VALUE;
 	dev->ctrl_sock = -1;
 	dev->flags = 0;
-
 	tuntap_log = tuntap_log_default;
-	return &_dev;
+	return dev;
 }
 
 void
@@ -69,7 +70,6 @@ tuntap_set_ip(struct device *dev, const char *addr, int netmask) {
 	t_tun_in_addr baddr4;
 	t_tun_in6_addr baddr6;
 	uint32_t mask;
-	int errval;
 
 	/* Only accept started device */
 	if (dev->tun_fd == TUNFD_INVALID_VALUE) {
@@ -87,10 +87,6 @@ tuntap_set_ip(struct device *dev, const char *addr, int netmask) {
 		return -1;
 	}
 
-	/* Netmask */
-	mask = ~0;
-	mask = ~(mask >> netmask);
-	mask = htonl(mask);
 
 	/*
 	 * Destination address parsing: we try IPv4 first and fall back to
@@ -99,20 +95,25 @@ tuntap_set_ip(struct device *dev, const char *addr, int netmask) {
 	(void)memset(&baddr4, '\0', sizeof baddr4);
 	(void)memset(&baddr6, '\0', sizeof baddr6);
 
-	errval = inet_pton(AF_INET, addr, &(baddr4));
-	if (errval == 1) {
+	if (inet_pton(AF_INET, addr, &(baddr4)) == 1) {
+		/* Netmask */
+		mask = ~0;
+		mask = ~(mask >> netmask);
+		mask = htonl(mask);
 		return tuntap_sys_set_ipv4(dev, &baddr4, mask);
-	} else if (errval == 0) {
-		if (inet_pton(AF_INET6, addr, &(baddr6)) == -1) {
-			tuntap_log(TUNTAP_LOG_ERR, "Invalid parameters");
-			return -1;
-		}
-		return tuntap_sys_set_ipv6(dev, &baddr6, mask);
-	} else if (errval == -1) {
+	} else if (inet_pton(AF_INET6, addr, &(baddr6)) == 1) {
+		/* ipv6 prefix no need to convert */
+		return tuntap_sys_set_ipv6(dev, &baddr6, netmask);
+	} else {
 		tuntap_log(TUNTAP_LOG_ERR, "Invalid parameters");
 		return -1;
 	}
 
 	/* NOTREACHED */
 	return -1;
+}
+
+t_tun
+tuntap_get_fd(struct device *dev) {
+	return dev->tun_fd;
 }
