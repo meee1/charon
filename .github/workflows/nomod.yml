@@ -215,7 +215,7 @@ jobs:
          cd third_party/libfec && make && cd .. && cd ..
          
          make
-         cp third_party/libfec/*.so ./plutosdr-fw/buildroot/output/target/usr/lib
+         #cp third_party/libfec/*.so ./plutosdr-fw/buildroot/output/target/usr/lib
          cp charon ./plutosdr-fw/buildroot/output/target/usr/bin
          cd plutosdr-fw
          make
