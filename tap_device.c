@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <strings.h>
 #include <complex.h>
+#include <stdint.h>
 #include "tuntap.h"
 #include "tap_device.h"
 #include "charon.h"
