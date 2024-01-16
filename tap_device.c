@@ -37,6 +37,7 @@
 #include <complex.h>
 #include <stdint.h>
 #include "tuntap.h"
+#include "private.h"
 #include "tap_device.h"
 #include "charon.h"
 #include "tcp_subs.h"
