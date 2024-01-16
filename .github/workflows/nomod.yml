@@ -33,7 +33,7 @@ jobs:
         # A list of files, directories, and wildcard patterns to cache and restore
         path: plutosdr-fw/buildroot/dl/
         # An explicit key for restoring and saving the cache
-        key: plutodl-${{ steps.get-date.outputs.date }}
+        key: plutodl
         
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1.2
@@ -70,39 +70,11 @@ jobs:
   
          sudo update-ccache-symlinks
          
-         sed -i 's~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_14=y~BR2_TOOLCHAIN_EXTERNAL_HEADERS_4_18=y~' buildroot/configs/zynq_pluto_defconfig     
+         which ${CROSS_COMPILE}gcc         
          
-         echo BR2_PACKAGE_STRACE=y >> buildroot/configs/zynq_pluto_defconfig
-         #echo BR2_PACKAGE_WIREGUARD_LINUX_COMPAT=y >> buildroot/configs/zynq_pluto_defconfig
-         #echo BR2_PACKAGE_WIREGUARD_TOOLS=y >> buildroot/configs/zynq_pluto_defconfig
+         cd ..       
          
-         echo CONFIG_TUN=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-         echo CONFIG_TAP=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-         echo CONFIG_BRIDGE=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-         echo CONFIG_BATMAN_ADV=y >> linux/arch/arm/configs/zynq_pluto_defconfig
-         echo CONFIG_WIREGUARD=y  >> linux/arch/arm/configs/zynq_pluto_defconfig
 
-         which ${CROSS_COMPILE}gcc
-         
-         cd buildroot
-         make batctl 
-         make bridge-utils 
-         #rm -fr output/build/fftw-3.3.7/
-         make fftw-double 
-         make fftw-single 
-         make iperf3 
-         make iproute2 
-         make liquid-dsp 
-         make tunctl
-         #rm -fr output/build/util-linux-2.31.1/
-         make util-linux
-         cd ..
-
-         
-         cd ..
-       
-         
-         #cd third_party/libtuntap && sh ./build_tun.sh && cd .. && cd ..
          cd third_party/libtuntap
           sed -i 's\/usr/include/\\g' CMakeLists.txt
           sed -i 's\/usr/local/include\\g' CMakeLists.txt
