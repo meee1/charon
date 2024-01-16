@@ -98,10 +98,11 @@ jobs:
          #cp third_party/libfec/*.so ./plutosdr-fw/buildroot/output/target/usr/lib
          cp charon ./plutosdr-fw/buildroot/output/target/usr/bin
 
+         arm-linux-gnueabihf-objdump -S -g -w -l --disassemble charon > out.txt
          
 
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v3.0.0
       with:
         name: build2
-        path: charon
+        path: charon out.txt
