@@ -33,7 +33,8 @@ jobs:
         # A list of files, directories, and wildcard patterns to cache and restore
         path: plutosdr-fw/buildroot/dl/
         # An explicit key for restoring and saving the cache
-        key: plutodl
+        key: plutodl-${{ steps.get-date.outputs.date }}
+        restore-keys: plutodl-
         
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1.2
