@@ -20,13 +20,20 @@ jobs:
          set -x
          sudo apt-get update
          sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache dfu-util u-boot-tools device-tree-compiler libssl-dev mtools bc python3 cpio zip unzip rsync file wget libiio-dev libncurses5-dev build-essential bison flex libssl-dev bc
+
+    - name: Get Date
+      id: get-date
+      run: |
+        echo "date=$(/bin/date -u "+%Y%m%d-%H:%M:%S")" >> $GITHUB_OUTPUT
+      shell: bash
+      
     - name: Cache
       uses: actions/cache@v2.1.7
       with:
         # A list of files, directories, and wildcard patterns to cache and restore
         path: plutosdr-fw/buildroot/dl/
         # An explicit key for restoring and saving the cache
-        key: plutodl
+        key: plutodl-${{ steps.get-date.outputs.date }}
         
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1.2
