@@ -1,4 +1,5 @@
 /* This file was automatically generated.  Do not edit! */
+#include <stdint.h>
 int write_tap_dev(char *buffer,int len);
 int read_tap_dev(char *buffer,int max_len,char *dst_mac,char *is_broadcast);
 int setNonblocking(int fd);
