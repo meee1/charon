@@ -54,6 +54,8 @@ jobs:
           touch buildroot/board/pluto/msd/LICENSE.html
           
           echo "BR2_CCACHE=y" >> buildroot/configs/zynq_pluto_defconfig
+
+          echo "BR2_PACKAGE_LIQUID_DSP_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
           
           make -C buildroot ARCH=arm zynq_pluto_defconfig
           make -C buildroot toolchain
@@ -107,4 +109,6 @@ jobs:
       uses: actions/upload-artifact@v3.0.0
       with:
         name: build2
-        path: charon out.txt
+        path: |
+          charon
+          out.txt
