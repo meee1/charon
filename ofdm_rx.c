@@ -134,6 +134,10 @@ int ofdm_rx_state() {
     _qq = _q->fs;
   }
 
+  if(_qq == NULL) {
+    return 0;
+  }
+
   return _qq->state; 
 }
 
