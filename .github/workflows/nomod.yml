@@ -60,8 +60,8 @@ jobs:
           make -C buildroot ARCH=arm zynq_pluto_defconfig
           make -C buildroot toolchain
           make -C buildroot libiio
+          make -C buildroot libfec
           make -C buildroot liquid-dsp
-          #make zImage
           make -C buildroot libad9361-iio
           make -C buildroot ad936x_ref_cal
           make -C buildroot libini
@@ -95,8 +95,6 @@ jobs:
          cd ..
          cd ..
          cd ..
-                  
-         cd third_party/libfec && make && cd .. && cd ..
          
          make
          #cp third_party/libfec/*.so ./plutosdr-fw/buildroot/output/target/usr/lib
