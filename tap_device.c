@@ -75,7 +75,7 @@ int init_tap_device(void) {
     fprintf(stderr, "\ncreated tap device");
   }
 
-	if (tuntap_start(dev, TUNTAP_MODE_ETHERNET, TUNTAP_ID_ANY) == -1) {
+	if (tuntap_start(dev, TUNTAP_MODE_ETHERNET, 0/*TUNTAP_ID_ANY*/) == -1) {
 		fprintf(stderr, "\ntuntap_start failed");
 		ret = 1;
 		goto clean;

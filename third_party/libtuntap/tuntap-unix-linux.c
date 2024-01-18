@@ -60,7 +60,7 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 	(void)memset(&ifr, '\0', sizeof ifr);
 	if (mode == TUNTAP_MODE_ETHERNET) {
 		ifr.ifr_flags = IFF_TAP;
-		ifname = "ofdm0";
+		ifname = "ofdm%i";
 	} else if (mode == TUNTAP_MODE_TUNNEL) {
 		ifr.ifr_flags = IFF_TUN;
 		ifname = "tun%i";
@@ -111,8 +111,6 @@ tuntap_sys_start(struct device *dev, int mode, int tun) {
 		tuntap_log(TUNTAP_LOG_ERR, "Can't get interface values");
 	    	return -1;
 	}
-	
-	tuntap_sys_set_ifname(dev, "ofdm0\0", 6);
 	
 	/* Save flags for tuntap_{up, down} */
 	dev->flags = ifr.ifr_flags;
