@@ -33,8 +33,8 @@
 #define OFDM_MODULATION LIQUID_MODEM_BPSK
 #define PAYLOAD_LEN 1514 
 
-#define OFDM_M 512 
-#define CP_LEN 32 
+#define OFDM_M 64 
+#define CP_LEN 8 
 #define TAPER_LEN 4
 #define OFDM_TIMEOUT_SEC 5
 
