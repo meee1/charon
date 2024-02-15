@@ -137,8 +137,8 @@ struct iio_context * pluto_init_txrx() {
     iio_channel_enable(tx0_q);
 
     pluto_enable_fir(0);
-    pluto_set_filter();
-    pluto_enable_fir(1);
+    //pluto_set_filter();
+    //pluto_enable_fir(1);
 
     pluto_set_out_gain( -80 );
 
@@ -228,7 +228,7 @@ long long pluto_get_in_gain(void) {
       "hardwaregain", 
       &gain_val);
 
-  //fprintf(stderr, "\ngain: %lld", gain_val);
+  fprintf(stderr, "\ngain: %lld", gain_val);
 
   return gain_val;
 }
@@ -254,7 +254,7 @@ long long pluto_get_in_rssi(void) {
       "rssi", 
       &rssi);
 
-  //fprintf(stderr, "\nin_rssi: %lld", -rssi);
+  fprintf(stderr, "\nin_rssi: %lld", -rssi);
 
   return -rssi;
 }
@@ -351,6 +351,8 @@ void pluto_set_in_sample_freq(long long sfreq) {
           "sampling_frequency",
           sfreq/8); //8x interpolation on FPGA
 
+          fprintf(stderr,"current_sample_freq %lld rx %lld tx %lld \n", sfreq, sfreq/8, sfreq/8);
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -361,7 +363,7 @@ void pluto_set_out_gain(long long gain) {
       iio_device_find_channel(phy, "voltage0", true),
       "hardwaregain",
       gain);
-  //fprintf(stderr, "\nsetting tx gain %lld", gain);
+  fprintf(stderr, "\nsetting tx gain %lld", gain);
 
 }
 

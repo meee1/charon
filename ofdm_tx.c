@@ -107,6 +107,8 @@ void init_ofdm_tx() {
      ofdmframe_init_default_sctype(ofdm_M, ofdm_p);
      ofdm_fg = ofdmflexframegen_create(ofdm_M,ofdm_cp_len,ofdm_taper_len,ofdm_p,&ofdm_fgprops);
 
+    ofdmflexframegen_print(ofdm_fg);
+
     timer1 = create_timer();
 }
 
