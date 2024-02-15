@@ -391,7 +391,7 @@ void init_ofdm_rx(void) {
 
   fs = ofdmflexframesync_create(M, cp_len, taper_len, p, ofdm_rx_callback, userdata);
 
-  ofdmflexframegen_print(fs);
+  ofdmflexframesync_print(fs);
 
   h_len = estimate_req_filter_len( (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_RX_BW_FACTOR)), OFDM_RX_STOP_DB );
   fprintf(stderr, "\nrx h_len: %d", h_len);
