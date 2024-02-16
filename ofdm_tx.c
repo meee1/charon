@@ -162,7 +162,7 @@ do_send:
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, ofdm_payload, tlen);
   elapsed = timer_elapsed_usec(timer1);
 
-  //fprintf(stderr, ", frame assembly time: %lld usec", elapsed);
+  fprintf(stderr, ", frame assembly time: %lld usec", elapsed);
 
   timer_reset(timer1);
   while(1) {
@@ -172,7 +172,7 @@ do_send:
 
     if(ofdm_last_symbol) {
       elapsed = timer_elapsed_usec(timer1);
-      //fprintf(stderr, ", frame tx time: %lld usec", elapsed);
+      fprintf(stderr, ", frame tx time: %lld usec", elapsed);
       return 0;
     }
   }
