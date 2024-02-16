@@ -94,7 +94,14 @@ jobs:
           cd ..
           cd ..
           cd ..
-          cd third_party/libfec && make && cp fec.h ../../plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/ && cd .. && cd ..
+          
+          cd third_party/libfec
+          make 
+          cp fec.h ../../plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/
+          cp *.so ../../plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/lib/
+          cp *.a ../../plutosdr-fw/buildroot/output/target/usr/lib/
+          cd .. 
+          cd ..
           
           cd plutosdr-fw
           make -C buildroot liquid-dsp
