@@ -137,8 +137,8 @@ struct iio_context * pluto_init_txrx() {
     iio_channel_enable(tx0_q);
 
     pluto_enable_fir(0);
-    //pluto_set_filter();
-    //pluto_enable_fir(1);
+    pluto_set_filter();
+    pluto_enable_fir(1);
 
     pluto_set_out_gain( -80 );
 
