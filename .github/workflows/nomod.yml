@@ -95,7 +95,7 @@ jobs:
           cd ..
           cd ..
           
-          cd third_party/libfec && make && cp fec.h ../../plutosdr-fw/buildroot/output/build/liquid-dsp-1.4.0/ && cd .. && cd ..
+          cd third_party/libfec && make && cp fec.h ../../plutosdr-fw/buildroot/output/target/usr/include/ && cd .. && cd ..
           
           cd plutosdr-fw
           make -C buildroot liquid-dsp
