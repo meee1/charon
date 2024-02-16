@@ -179,7 +179,6 @@ struct iio_context * pluto_init_txrx() {
       fprintf(stderr, "\ntx h_len: %d", h_len);
 
       liquid_firdes_kaiser(h_len,  (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)),  OFDM_TX_STOP_DB,0.0f,h);
-
       q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
 
       txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
@@ -196,6 +195,7 @@ struct iio_context * pluto_init_txrx() {
       tx_p_inc = iio_buffer_step(txbuf);  //no need to init this every loop
         
     }
+
 
     return ctx;
 }
@@ -350,8 +350,6 @@ void pluto_set_in_sample_freq(long long sfreq) {
           "sampling_frequency",
           sfreq/8); //8x interpolation on FPGA
 
-          fprintf(stderr,"current_sample_freq %lld rx %lld tx %lld \n", sfreq, sfreq/8, sfreq/8);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -362,7 +360,7 @@ void pluto_set_out_gain(long long gain) {
       iio_device_find_channel(phy, "voltage0", true),
       "hardwaregain",
       gain);
-  fprintf(stderr, "\nsetting tx gain %lld", gain);
+  //fprintf(stderr, "\nsetting tx gain %lld", gain);
 
 }
 
