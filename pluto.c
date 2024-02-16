@@ -179,12 +179,12 @@ struct iio_context * pluto_init_txrx() {
       fprintf(stderr, "\ntx h_len: %d", h_len);
 
       liquid_firdes_kaiser(h_len,  (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)),  OFDM_TX_STOP_DB,0.0f,h);
-fprintf(stderr, "liquid_firdes_kaiser done");
+
       q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
-fprintf(stderr, "firinterp_crcf_create done");
+
       txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
       //fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
-fprintf(stderr, "iio_device_create_buffer done");
+
       if (!txbuf) {
           perror("Could not create TX buffer");
           exit(0);
@@ -197,7 +197,6 @@ fprintf(stderr, "iio_device_create_buffer done");
         
     }
 
-    fprintf(stderr, "\npluto_init_txrx done");
     return ctx;
 }
 
@@ -228,7 +227,7 @@ long long pluto_get_in_gain(void) {
       "hardwaregain", 
       &gain_val);
 
-  fprintf(stderr, "\ngain: %lld", gain_val);
+  //fprintf(stderr, "\ngain: %lld", gain_val);
 
   return gain_val;
 }
@@ -254,7 +253,7 @@ long long pluto_get_in_rssi(void) {
       "rssi", 
       &rssi);
 
-  fprintf(stderr, "\nin_rssi: %lld", -rssi);
+  //fprintf(stderr, "\nin_rssi: %lld", -rssi);
 
   return -rssi;
 }
