@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
          submodules: recursive                
     - name: apt-get
@@ -29,7 +29,7 @@ jobs:
       shell: bash
       
     - name: Cache
-      uses: actions/cache@v2.1.7
+      uses: actions/cache@v4
       with:
         # A list of files, directories, and wildcard patterns to cache and restore
         path: plutosdr-fw/buildroot/dl/
@@ -116,7 +116,7 @@ jobs:
 
 
     - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v3.0.0
+      uses: actions/upload-artifact@v4
       with:
         name: build2
         path: |
