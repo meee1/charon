@@ -5,9 +5,10 @@ on:
     branches: [ master, dev ]
   pull_request:
     branches: [ master, dev ]
+  workflow_dispatch:
 
 jobs:
-  build2:
+  build1:
 
     runs-on: ubuntu-20.04
 
