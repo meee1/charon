@@ -4,19 +4,36 @@ DIRS ?= .
 
 ARCH=arm
 
+CROSS_COMPILE=arm-linux-gnueabihf-
+
 SYSROOT ?=  ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 
-FLAGS ?= -O3 -std=c99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
+FLAGS ?= -O3 -std=gnu99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
-        -I./third_party/libtuntap/
+        -I./third_party/libtuntap/\
+        -D_TIME_BITS=32 -fno-builtin-strtol
+
+# Static library paths
+LIBLIQUID_STATIC = $(SYSROOT)usr/lib/libliquid.a
+LIBIIO_STATIC = $(SYSROOT)usr/lib/libiio.a
+LIBAD9361_STATIC = $(SYSROOT)usr/lib/libad9361.a
+LIBFFTW3F_STATIC = $(SYSROOT)usr/lib/libfftw3f.a
 
 LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
            -L ./plutosdr-fw/buildroot/output/target/usr/lib\
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
            -L$(SYSROOT) -L$(SYSROOT)lib -L$(SYSROOT)usr -L$(SYSROOT)usr/lib \
-           -lliquid -liio -lad9361 -lc -lm -lfftw3 -lfftw3f -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 -lfec -ltuntap
+           -Wl,--wrap=__isoc23_strtol \
+           -Wl,--wrap=__isoc23_strtoll \
+           -Wl,--wrap=__isoc23_strtoul \
+           -Wl,--wrap=__isoc23_strtoull \
+           -Wl,-Bstatic $(LIBLIQUID_STATIC) $(LIBIIO_STATIC) $(LIBAD9361_STATIC) $(LIBFFTW3F_STATIC) \
+           -Wl,-Bdynamic \
+           -lc -lm -lfftw3 -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 \
+           -Wl,-Bstatic -lfec -ltuntap \
+           -Wl,-Bdynamic
 
 PLATFORM := $(shell uname -s)
 

@@ -86,7 +86,7 @@ static float complex x;        // input sample
 static float complex y[DECIMATE_INTERPOLATE_FACTOR];     // output samples
 static int nbytes_tx;
 static int llen;
-static int index=0;
+static int buf_index=0;
 static int tx_mod=0;
 static int ii=0;
 static int jj=0;

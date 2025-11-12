@@ -1,0 +1,38 @@
+diff --git a/package/fftw/fftw-single/fftw-single.mk b/package/fftw/fftw-single/fftw-single.mk
+index 1e26ff7a..8b6b20c6 100644
+--- a/package/fftw/fftw-single/fftw-single.mk
++++ b/package/fftw/fftw-single/fftw-single.mk
+@@ -17,7 +17,9 @@ FFTW_SINGLE_CONF_ENV = $(FFTW_COMMON_CONF_ENV)
+ FFTW_SINGLE_CONF_OPTS = \
+ 	$(FFTW_COMMON_CONF_OPTS) \
+ 	CFLAGS="$(FFTW_SINGLE_CFLAGS)" \
+-	--enable-single
++	--enable-single \
++	--enable-static \
++	--disable-shared
+ 
+ FFTW_SINGLE_CFLAGS = $(FFTW_COMMON_CFLAGS)
+ 
+diff --git a/package/libad9361-iio/libad9361-iio.mk b/package/libad9361-iio/libad9361-iio.mk
+index 32f0c82b..815c0e08 100644
+--- a/package/libad9361-iio/libad9361-iio.mk
++++ b/package/libad9361-iio/libad9361-iio.mk
+@@ -10,5 +10,6 @@ LIBAD9361_IIO_INSTALL_STAGING = YES
+ LIBAD9361_IIO_LICENSE = LGPL-2.1+
+ LIBAD9361_IIO_LICENSE_FILES = LICENSE
+ LIBAD9361_IIO_DEPENDENCIES = libiio
++LIBAD9361_IIO_CONF_OPTS = -DBUILD_SHARED_LIBS=OFF
+ 
+ $(eval $(cmake-package))
+diff --git a/package/libiio/libiio.mk b/package/libiio/libiio.mk
+index db43a81f..73ef5401 100644
+--- a/package/libiio/libiio.mk
++++ b/package/libiio/libiio.mk
+@@ -17,6 +17,7 @@ LIBIIO_LICENSE = LGPL-2.1+
+ LIBIIO_LICENSE_FILES = COPYING.txt
+ 
+ LIBIIO_CONF_OPTS = -DENABLE_IPV6=ON \
++	-DBUILD_SHARED_LIBS=OFF \
+ 	-DWITH_LOCAL_BACKEND=$(if $(BR2_PACKAGE_LIBIIO_LOCAL_BACKEND),ON,OFF) \
+ 	-DWITH_LOCAL_CONFIG=$(if $(BR2_PACKAGE_LIBIIO_LOCAL_CONFIG),ON,OFF) \
+ 	-DWITH_NETWORK_BACKEND=$(if $(BR2_PACKAGE_LIBIIO_NETWORK_BACKEND),ON,OFF) \
