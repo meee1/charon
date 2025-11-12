@@ -16,8 +16,6 @@ FLAGS ?= -O3 -std=gnu99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
 
 # Static library paths
 LIBLIQUID_STATIC = $(SYSROOT)usr/lib/libliquid.a
-LIBIIO_STATIC = $(SYSROOT)usr/lib/libiio.a
-LIBAD9361_STATIC = $(SYSROOT)usr/lib/libad9361.a
 LIBFFTW3F_STATIC = $(SYSROOT)usr/lib/libfftw3f.a
 
 LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
@@ -29,7 +27,7 @@ LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
            -Wl,--wrap=__isoc23_strtoll \
            -Wl,--wrap=__isoc23_strtoul \
            -Wl,--wrap=__isoc23_strtoull \
-           -Wl,-Bstatic $(LIBLIQUID_STATIC) $(LIBIIO_STATIC) $(LIBAD9361_STATIC) $(LIBFFTW3F_STATIC) \
+           -Wl,-Bstatic $(LIBLIQUID_STATIC) $(LIBFFTW3F_STATIC) \
            -Wl,-Bdynamic \
            -lc -lm -lfftw3 -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 \
            -Wl,-Bstatic -lfec -ltuntap \
