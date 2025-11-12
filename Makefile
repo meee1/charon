@@ -29,7 +29,7 @@ LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
            -Wl,--wrap=__isoc23_strtoull \
            -Wl,-Bstatic $(LIBLIQUID_STATIC) $(LIBFFTW3F_STATIC) \
            -Wl,-Bdynamic \
-           -lc -lm -lfftw3 -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 \
+           -lc -lm -lfftw3 -liio -lad9361 -lini -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 \
            -Wl,-Bstatic -lfec -ltuntap \
            -Wl,-Bdynamic
 
