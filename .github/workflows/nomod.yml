@@ -53,6 +53,17 @@ jobs:
           
           cd plutosdr-fw
           touch buildroot/board/pluto/msd/LICENSE.html
+
+          # Apply buildroot patches for static library builds
+          echo "Applying buildroot patches for static library support..."
+          cd buildroot
+          if ! git apply --check --reverse ../../buildroot_static_libs.patch 2>/dev/null; then
+              echo "Applying buildroot static library patch..."
+              git apply ../../buildroot_static_libs.patch
+          else
+              echo "Buildroot patch already applied"
+          fi
+          cd ..
           
           echo "BR2_CCACHE=y" >> buildroot/configs/zynq_pluto_defconfig
           
