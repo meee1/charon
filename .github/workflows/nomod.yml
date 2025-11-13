@@ -139,3 +139,24 @@ jobs:
         path: |
           charon
           out.txt
+
+    - name: build
+      env:
+          SKIP_LEGAL: 1
+      run: |
+          set -x -e
+          
+          export BR2_USE_CCACHE=1
+          export BR2_CCACHE_DIR=$(pwd)/.ccache
+          
+          cd plutosdr-fw
+
+          make pluto.frm pluto.dfu
+
+    - name: Upload Firmware Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware
+        path: |
+          plutosdr-fw/pluto.frm
+          plutosdr-fw/pluto.dfu
