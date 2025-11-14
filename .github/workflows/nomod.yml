@@ -148,6 +148,8 @@ jobs:
           
           export BR2_USE_CCACHE=1
           export BR2_CCACHE_DIR=$(pwd)/.ccache
+          export XSA_URL=https://github.com/analogdevicesinc/plutosdr-fw/releases/download/v0.36/system_top.xsa
+          #               http://github.com/analogdevicesinc/plutosdr-fw/releases/download/${LATEST_TAG}/system_top.xsa
           
           cd plutosdr-fw
 
