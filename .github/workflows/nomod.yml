@@ -161,8 +161,12 @@ jobs:
           echo "CONFIG_SYSCTL_SYSCALL=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
 
           echo "CONFIG_TUNCTL=y" >> plutosdr-fw/buildroot/board/pluto/busybox-1.25.0.config
+          echo "CONFIG_BRCTL=y" >> plutosdr-fw/buildroot/board/pluto/busybox-1.25.0.config
+          echo "CONFIG_TASKSET=y" >> plutosdr-fw/buildroot/board/pluto/busybox-1.25.0.config
           
           cd plutosdr-fw
+
+          make -C buildroot batctl
 
           make pluto.frm pluto.dfu zip-all
 
