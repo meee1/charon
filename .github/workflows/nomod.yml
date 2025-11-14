@@ -164,7 +164,7 @@ jobs:
           
           cd plutosdr-fw
 
-          make pluto.frm pluto.dfu 
+          make pluto.frm pluto.dfu zip-all
 
     - name: Upload Firmware Artifacts
       uses: actions/upload-artifact@v4
@@ -173,3 +173,5 @@ jobs:
         path: |
           plutosdr-fw/pluto.frm
           plutosdr-fw/pluto.dfu
+          plutosdr-fw/*.zip
+          
