@@ -151,6 +151,17 @@ jobs:
           export XSA_URL=https://github.com/analogdevicesinc/plutosdr-fw/releases/download/v0.38/system_top.xsa
           #               http://github.com/analogdevicesinc/plutosdr-fw/releases/download/${LATEST_TAG}/system_top.xsa
           
+          echo "CONFIG_TUN=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BRIDGE=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_MODULES=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_MODULE_UNLOAD=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_MODULE_FORCE_UNLOAD=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_MODVERSIONS=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_SYSCTL_SYSCALL=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+
+          echo "CONFIG_TUNCTL=y" >> plutosdr-fw/buildroot/board/pluto/busybox-1.25.0.config
+          
           cd plutosdr-fw
 
           make pluto.frm pluto.dfu 
