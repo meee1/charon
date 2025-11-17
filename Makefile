@@ -9,7 +9,7 @@ CROSS_COMPILE=arm-linux-gnueabihf-
 SYSROOT ?=  ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 
-FLAGS ?= -O3 -std=gnu99 -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
+FLAGS ?= -O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
         -I./third_party/libtuntap/\
         -D_TIME_BITS=32 -fno-builtin-strtol
