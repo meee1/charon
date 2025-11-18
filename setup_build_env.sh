@@ -41,6 +41,30 @@ else
 fi
 cd ..
 
+# Add additional buildroot packages to defconfig
+echo "Adding additional packages to buildroot config..."
+echo "BR2_PACKAGE_BRIDGE_UTILS=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_LIQUID_DSP_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_FFTW_SINGLE=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_STRACE=y" >> buildroot/configs/zynq_pluto_defconfig
+
+# Fix liquid-dsp for Cortex-A9 (PlutoSDR has Zynq-7000 with Cortex-A9, not A7)
+echo "Patching liquid-dsp makefile for Cortex-A9..."
+sed -i 's#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)\
+define LIQUID_DSP_FIX_CORTEX_A9\
+    $(SED) '"'"'s/-mcpu=cortex-a7/-mcpu=cortex-a9/g'"'"' $(@D)/makefile\
+    $(SED) '"'"'s/-mfpu=neon-vfpv4/-mfpu=neon/g'"'"' $(@D)/makefile\
+endef\
+LIQUID_DSP_POST_CONFIGURE_HOOKS += LIQUID_DSP_FIX_CORTEX_A9#g' buildroot/package/liquid-dsp/liquid-dsp.mk
+
+# Update libiio to newer commit
+echo "Updating libiio version..."
+sed -i 's/38483f31be391af66b35542f733e569febe13d3a/a0eca0d/g' buildroot/package/libiio/libiio.mk
+echo 'sha256 3b743ead3675af5f7812a0f79da719ad18e4f398ba8a861f0c2aa4ede1d0964b libiio-a0eca0d-br1.tar.gz' >> buildroot/package/libiio/libiio.hash
+
+# Update ad936x_ref_cal hash
+sed -i 's/26aedd8021fa939ab2f53e55904d869207265242fef7ad86aa4673e219b7cbef/4814915de63d975807e918df82bb86021d0e78839e8cc4116a36476d0b33180c/g' buildroot/package/ad936x_ref_cal/ad936x_ref_cal.hash
+
 # Configure buildroot for Pluto
 echo "Configuring buildroot..."
 make -C buildroot ARCH=arm zynq_pluto_defconfig -j 8
@@ -56,6 +80,9 @@ make -C buildroot libiio -j 8
 echo "Building libad9361-iio..."
 make -C buildroot libad9361-iio -j 8
 
+echo "Building ad936x_ref_cal..."
+make -C buildroot ad936x_ref_cal -j 8
+
 # Copy libad9361 static library to sysroot (buildroot doesn't install it by default)
 echo "Installing libad9361.a to sysroot..."
 cp buildroot/output/build/libad9361-iio-*/libad9361.a buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/lib/ 2>/dev/null || true
@@ -69,6 +96,11 @@ make -C buildroot zlib -j 8
 echo "Building fftw..."
 make -C buildroot fftw-double -j 8
 make -C buildroot fftw-single -j 8
+
+# Create git tag for version tracking
+cd ..
+git tag v0.38 || true
+cd plutosdr-fw
 
 # Set up environment variables
 export PATH=$(pwd)/buildroot/output/host/bin:$(pwd)/buildroot/output/host/sbin:${PATH}
@@ -84,8 +116,8 @@ cd ..
 echo "Building libtuntap..."
 cd third_party/libtuntap
 if [ ! -f ".built" ]; then
-    sed -i 's|/usr/include/||g' CMakeLists.txt 2>/dev/null || true
-    sed -i 's|/usr/local/include||g' CMakeLists.txt 2>/dev/null || true
+    sed -i 's\/usr/include/\\g' CMakeLists.txt 2>/dev/null || true
+    sed -i 's\/usr/local/include\\g' CMakeLists.txt 2>/dev/null || true
     mkdir -p build
     cd build
     cmake .. -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++
@@ -121,6 +153,30 @@ cd plutosdr-fw
 make -C buildroot liquid-dsp -j 8
 cd ..
 
+# Add Linux kernel config options for batman-adv mesh networking
+echo "Adding Linux kernel config options..."
+cd plutosdr-fw
+echo "CONFIG_TUN=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BRIDGE=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_MODULES=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_MODULE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_MODULE_FORCE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_MODVERSIONS=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_SYSCTL_SYSCALL=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+
+# Add busybox config options
+echo "Adding busybox config options..."
+echo "CONFIG_TUNCTL=y" >> buildroot/board/pluto/busybox-1.25.0.config
+echo "CONFIG_BRCTL=y" >> buildroot/board/pluto/busybox-1.25.0.config
+echo "CONFIG_TASKSET=y" >> buildroot/board/pluto/busybox-1.25.0.config
+
+# Build batctl (batman-adv control tool)
+echo "Building batctl..."
+make -C buildroot batctl -j 8
+
+cd ..
+
 echo ""
 echo "=== Build environment setup complete! ==="
 echo ""
@@ -128,3 +184,9 @@ echo "You can now build charon with: make"
 echo ""
 echo "Note: The toolchain and libraries are cached in plutosdr-fw/buildroot/output/"
 echo "      Subsequent builds will be much faster."
+echo ""
+echo "To build the full PlutoSDR firmware image:"
+echo "  1. Build charon: make"
+echo "  2. Copy to buildroot: cp charon plutosdr-fw/buildroot/output/target/usr/bin/"
+echo "  3. Build firmware: cd plutosdr-fw && make"
+echo "  4. Flash firmware: plutosdr-fw/build/pluto.frm"
