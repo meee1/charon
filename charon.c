@@ -296,8 +296,6 @@ void main_loop(void) {
     }
   } 
 
-  fprintf(stderr, "\nstart TX %d", ofdm_rx_state());
-
   //transmit
   if( ofdm_rx_state() == OFDMFRAMESYNC_STATE_SEEKPLCP) {
 
