@@ -39,6 +39,8 @@
 #define FFT_DIR_FORWARD      FFTW_FORWARD
 #define FFT_DIR_BACKWARD     FFTW_BACKWARD
 #define FFT_METHOD           FFTW_ESTIMATE
+
+
 struct ofdmframesync_s {
     unsigned int M;         // number of subcarriers
     unsigned int M2;        // number of subcarriers (divided by 2)
@@ -71,8 +73,9 @@ struct ofdmframesync_s {
 
     // gain
     float g0;               // nominal gain (coarse initial estimate)
-    float complex * G0;     // complex subcarrier gain estimate, S0[0]
-    float complex * G1;     // complex subcarrier gain estimate, S0[1]
+    float complex * G0a;    // complex subcarrier gain estimate, S0[a]
+    float complex * G0b;    // complex subcarrier gain estimate, S0[b]
+    float complex * G1;     // complex subcarrier gain estimate, S1
     float complex * G;      // complex subcarrier gain estimate
     float complex * B;      // subcarrier phase rotation due to backoff
     float complex * R;      // 
@@ -128,6 +131,7 @@ struct ofdmframesync_s {
 #endif
 };
 
+
 struct ofdmflexframesync_s {
     unsigned int M;         // number of subcarriers
     unsigned int cp_len;    // cyclic prefix length
@@ -142,17 +146,19 @@ struct ofdmflexframesync_s {
     unsigned int M_S1;      // number of enabled subcarriers in S1
 
     // header
-    modem mod_header;                   // header modulator
+    int header_soft;                    // perform soft demod of header
+    modemcf mod_header;                 // header modulator
     packetizer p_header;                // header packetizer
-    unsigned char header[OFDMFLEXFRAME_H_DEC];      // header data (uncoded)
-#if OFDMFLEXFRAME_H_SOFT
-    unsigned char header_enc[8*OFDMFLEXFRAME_H_ENC];  // header data (encoded, soft bits)
-    unsigned char header_mod[OFDMFLEXFRAME_H_BPS*OFDMFLEXFRAME_H_SYM];  // header symbols (soft bits)
-#else
-    unsigned char header_enc[OFDMFLEXFRAME_H_ENC];  // header data (encoded)
-    unsigned char header_mod[OFDMFLEXFRAME_H_SYM];  // header symbols
-#endif
+    unsigned char * header;             // header data (uncoded)
+    unsigned char * header_enc;         // header data (encoded)
+    unsigned char * header_mod;         // header symbols
+    unsigned int header_user_len;       // header length (user)
+    unsigned int header_dec_len;        // header length (uncoded)
+    unsigned int header_enc_len;        // header length (encoded)
+    unsigned int header_sym_len;        // header length (symbols)
     int header_valid;                   // valid header flag
+
+    ofdmflexframegenprops_s header_props; // header properties
 
     // header properties
     modulation_scheme ms_payload;       // payload modulation scheme
@@ -163,8 +169,9 @@ struct ofdmflexframesync_s {
     fec_scheme fec1;                    // payload FEC (outer)
 
     // payload
+    int payload_soft;                   // perform soft demod of payload
     packetizer p_payload;               // payload packetizer
-    modem mod_payload;                  // payload demodulator
+    modemcf mod_payload;                // payload demodulator
     unsigned char * payload_enc;        // payload data (encoded bytes)
     unsigned char * payload_dec;        // payload data (decoded bytes)
     unsigned int payload_enc_len;       // length of encoded payload
@@ -175,7 +182,8 @@ struct ofdmflexframesync_s {
     // callback
     framesync_callback callback;        // user-defined callback function
     void * userdata;                    // user-defined data structure
-    framesyncstats_s framestats;        // frame statistic object
+    framesyncstats_s    framesyncstats; // frame statistic object (synchronizer, evm, etc.)
+    framedatastats_s    framedatastats; // frame statistic object (packet statistics)
     float evm_hat;                      // average error vector magnitude
 
     // internal synchronizer objects

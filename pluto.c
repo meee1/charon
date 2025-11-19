@@ -136,9 +136,11 @@ struct iio_context * pluto_init_txrx() {
     iio_channel_enable(tx0_i);
     iio_channel_enable(tx0_q);
 
-    pluto_enable_fir(0);
-    pluto_set_filter();
-    pluto_enable_fir(1);
+    ad9361_set_bb_rate_custom_filter_auto	(phy, sample_freq_hz);
+
+    //pluto_enable_fir(0);
+    //pluto_set_filter();
+    //pluto_enable_fir(1);
 
     pluto_set_out_gain( -80 );
 
@@ -336,6 +338,8 @@ void pluto_set_in_sample_freq(long long sfreq) {
         iio_device_find_channel(phy, "voltage0", false),
         "sampling_frequency",
         sfreq); 
+
+    ad9361_set_bb_rate_custom_filter_auto	(phy, sfreq);
 
     current_sample_freq = sfreq;
 }

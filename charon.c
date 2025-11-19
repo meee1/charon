@@ -131,7 +131,7 @@ int main (int argc, char **argv) {
 
 
   main_loop();
-
+  fprintf(stderr, "\n enter while main_loop");
   while(1) {
     main_loop();
   }
