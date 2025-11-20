@@ -1,7 +1,7 @@
 # Charon - PlutoSDR OFDM Mesh Transceiver
 
 ## Project Overview
-Charon transforms Analog Devices PlutoSDR devices into standalone OFDM transceivers with batman-adv mesh networking. The system implements a narrow-band (140KHz) OFDM-64 QAM-16 wireless physical layer at 272 Kbps, providing layer-2 mesh routing for TCP/IP traffic between host systems.
+Charon transforms Analog Devices PlutoSDR devices into standalone OFDM transceivers with batman-adv mesh networking. The system implements a 1.4 MHz OFDM-64 QAM-16 wireless physical layer at 272 Kbps, providing layer-2 mesh routing for TCP/IP traffic between host systems.
 
 **Key Architecture**: Embedded C application running on PlutoSDR's ARM processor (Xilinx Zynq-7000), interfacing with AD9361 RF transceiver via libiio, bridging wireless OFDM frames to/from TAP network device.
 
@@ -14,7 +14,8 @@ Charon transforms Analog Devices PlutoSDR devices into standalone OFDM transceiv
 
 ### OFDM Configuration (ofdm_conf.h)
 - **Fixed Parameters**: 64 subcarriers, 16-QAM modulation, 8x decimation/interpolation factor
-- Sample rate: 11.2 MHz hardware → decimated to 1.4 MHz → software decimated by 8x = 140 KHz occupied BW
+- Sample rate: 11.2 MHz hardware → decimated by 8x to 1.4 MHz → 1.4 MHz occupied bandwidth
+- Subcarrier spacing: ~21.875 kHz (1.4 MHz / 64 subcarriers)
 - FEC: SECDED7264 + Hamming128 for forward error correction
 - **DO NOT change these without rebuilding filters** (see `filters/pluto/pluto_filters.h`)
 

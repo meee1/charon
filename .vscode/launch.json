@@ -1,0 +1,132 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) OFDM File Transfer - Small File",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/ofdm_file_transfer",
+            "args": [
+                "test_small.txt",
+                "output.txt"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/example",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build-ofdm-file-transfer",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "(gdb) OFDM File Transfer - Large File",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/ofdm_file_transfer",
+            "args": [
+                "test.txt",
+                "output_test.txt"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/example",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build-ofdm-file-transfer",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "(gdb) OFDM File Transfer - Custom",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/ofdm_file_transfer",
+            "args": [
+                "${input:inputFile}",
+                "${input:outputFile}"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/example",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build-ofdm-file-transfer",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "(gdb) OFDM Loopback Example",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/ofdm_loopback_example",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/example",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build-ofdm-loopback",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "inputFile",
+            "type": "promptString",
+            "description": "Input file path",
+            "default": "test.txt"
+        },
+        {
+            "id": "outputFile",
+            "type": "promptString",
+            "description": "Output file path",
+            "default": "output.txt"
+        }
+    ]
+}

@@ -1,0 +1,102 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-ofdm-file-transfer",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "ofdm_file_transfer"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/example"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build-ofdm-loopback",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "ofdm_loopback_example"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/example"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build-all-examples",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "all"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/example"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "clean-examples",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "clean"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/example"
+            },
+            "problemMatcher": [],
+            "group": "build",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "run-tests",
+            "type": "shell",
+            "command": "./test.sh",
+            "options": {
+                "cwd": "${workspaceFolder}/example"
+            },
+            "problemMatcher": [],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ]
+}
