@@ -113,6 +113,36 @@
             ],
             "preLaunchTask": "build-ofdm-loopback",
             "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "(gdb) Charon Host Mode",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/charon-host",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build-charon-host",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+            }
         }
     ],
     "inputs": [

@@ -10,7 +10,7 @@ ARCH := $(shell uname -m)
 CROSS_COMPILE =
 SYSROOT =
 
-FLAGS ?= -O2 -std=gnu99 -ggdb \
+FLAGS ?= -O0 -std=gnu99 -ggdb \
         -I./third_party/libtuntap/\
         -D_FILE_OFFSET_BITS=64
 

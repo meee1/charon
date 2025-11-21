@@ -44,8 +44,10 @@
 #include "config.h"
 
 // UDP socket configuration
-#define TX_PORT 5001
-#define RX_PORT 5002
+#define TX_DEST_IP "127.0.0.1"  // Destination for TX packets
+#define TX_DEST_PORT 5002
+#define RX_BIND_IP "127.0.0.1"  // Listen address for RX
+#define RX_BIND_PORT 5002
 
 static int tx_sock_fd = -1;
 static int rx_sock_fd = -1;
@@ -87,38 +89,65 @@ static int ofdm_initialized = 0;
 ///////////////////////////////////////////////////////////////////////////////////////
 // Socket helper functions
 ///////////////////////////////////////////////////////////////////////////////////////
-static int create_udp_socket(int port) {
+static int create_rx_udp_socket(const char *ip, int port) {
     int sock_fd;
     struct sockaddr_in addr;
     int opt = 1;
-    
+
     sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
         perror("UDP socket creation failed");
         return -1;
     }
-    
+
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         perror("setsockopt failed");
         close(sock_fd);
         return -1;
     }
-    
+
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
+        fprintf(stderr, "Invalid IP address: %s\n", ip);
+        close(sock_fd);
+        return -1;
+    }
     addr.sin_port = htons(port);
-    
+
     if (bind(sock_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind failed");
         close(sock_fd);
         return -1;
     }
-    
+
     // Set non-blocking
     int flags = fcntl(sock_fd, F_GETFL, 0);
     fcntl(sock_fd, F_SETFL, flags | O_NONBLOCK);
-    
+
+    return sock_fd;
+}
+
+static int create_tx_udp_socket(void) {
+    int sock_fd;
+    int opt = 1;
+
+    sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock_fd < 0) {
+        perror("UDP socket creation failed");
+        return -1;
+    }
+
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt failed");
+        close(sock_fd);
+        return -1;
+    }
+
+    // Set non-blocking
+    int flags = fcntl(sock_fd, F_GETFL, 0);
+    fcntl(sock_fd, F_SETFL, flags | O_NONBLOCK);
+
     return sock_fd;
 }
 
@@ -127,25 +156,34 @@ static int create_udp_socket(int port) {
 struct iio_context * pluto_init_txrx() {
     
     fprintf(stderr, "\nInitializing host mode with UDP sockets...");
-    
-    // Create TX UDP socket
-    tx_sock_fd = create_udp_socket(TX_PORT);
+
+    // Create TX UDP socket (unbound, for sending only)
+    tx_sock_fd = create_tx_udp_socket();
     if (tx_sock_fd < 0) {
-        fprintf(stderr, "\nFailed to create TX UDP socket on port %d", TX_PORT);
+        fprintf(stderr, "\nFailed to create TX UDP socket");
         exit(1);
     }
-    fprintf(stderr, "\nTX UDP socket bound to port %d", TX_PORT);
-    
-    // Create RX UDP socket
-    rx_sock_fd = create_udp_socket(RX_PORT);
+
+    // Set up TX destination address
+    memset(&tx_dest_addr, 0, sizeof(tx_dest_addr));
+    tx_dest_addr.sin_family = AF_INET;
+    if (inet_pton(AF_INET, TX_DEST_IP, &tx_dest_addr.sin_addr) <= 0) {
+        fprintf(stderr, "\nInvalid TX destination IP: %s", TX_DEST_IP);
+        exit(1);
+    }
+    tx_dest_addr.sin_port = htons(TX_DEST_PORT);
+    tx_dest_valid = 1;
+    fprintf(stderr, "\nTX will send to %s:%d", TX_DEST_IP, TX_DEST_PORT);
+
+    // Create RX UDP socket (bound to listen for incoming packets)
+    rx_sock_fd = create_rx_udp_socket(RX_BIND_IP, RX_BIND_PORT);
     if (rx_sock_fd < 0) {
-        fprintf(stderr, "\nFailed to create RX UDP socket on port %d", RX_PORT);
+        fprintf(stderr, "\nFailed to create RX UDP socket on %s:%d", RX_BIND_IP, RX_BIND_PORT);
         exit(1);
     }
-    fprintf(stderr, "\nRX UDP socket bound to port %d", RX_PORT);
-    
+    fprintf(stderr, "\nRX UDP socket listening on %s:%d", RX_BIND_IP, RX_BIND_PORT);
+
     rx_addr_len = sizeof(rx_src_addr);
-    tx_dest_valid = 0;
     
     // Initialize TX filter
     if(!pluto_tx_initialized) {
@@ -293,34 +331,40 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
     if (tx_sock_fd < 0) {
         return 0; // Socket not initialized
     }
-    
+
     // If we don't have a destination yet, can't transmit
     if (!tx_dest_valid) {
         return 0;
     }
-    
+
     llen = len;
-    
+
+    // Calculate total output samples after interpolation
+    int total_samples = llen * DECIMATE_INTERPOLATE_FACTOR;
+    static int16_t tx_buffer[16384]; // Large enough buffer for interpolated samples (2 int16 per sample)
+    int buf_idx = 0;
+
+    // Interpolate all samples and collect into buffer
     for(ii=0; ii<llen; ii++) {
         x = buffer[ii];
-        
+
         firinterp_crcf_execute(q, x, y);  // interpolate
-        
+
         for(jj=0; jj<DECIMATE_INTERPOLATE_FACTOR; jj++) {
-            int16_t tx_samples[2];
-            tx_samples[0] = (int16_t)(creal(y[jj]) * 8192.0);
-            tx_samples[1] = (int16_t)(cimag(y[jj]) * 8192.0);
-            
-            ssize_t sent = sendto(tx_sock_fd, tx_samples, sizeof(tx_samples), 0,
-                                 (struct sockaddr *)&tx_dest_addr, sizeof(tx_dest_addr));
-            if (sent < 0) {
-                if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    fprintf(stderr, "\nTX UDP sendto error: %s", strerror(errno));
-                }
-            }
+            tx_buffer[buf_idx++] = (int16_t)(creal(y[jj]) * 8192.0);
+            tx_buffer[buf_idx++] = (int16_t)(cimag(y[jj]) * 8192.0);
         }
     }
-    
+
+    // Send all interpolated data in one UDP packet
+    ssize_t sent = sendto(tx_sock_fd, tx_buffer, buf_idx * sizeof(int16_t), 0,
+                         (struct sockaddr *)&tx_dest_addr, sizeof(tx_dest_addr));
+    if (sent < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            fprintf(stderr, "\nTX UDP sendto error: %s", strerror(errno));
+        }
+    }
+
     return 0;
 }
 
@@ -349,16 +393,7 @@ int pluto_receive() {
     if (bytes_read == 0 || bytes_read < 4) {
         return 0; // Need at least one I/Q pair
     }
-    
-    // Save source address as TX destination on first RX packet
-    if (!tx_dest_valid) {
-        memcpy(&tx_dest_addr, &rx_src_addr, sizeof(tx_dest_addr));
-        tx_dest_addr.sin_port = htons(TX_PORT);  // Send to TX port
-        tx_dest_valid = 1;
-        fprintf(stderr, "\nTX destination set to %s:%d", 
-                inet_ntoa(tx_dest_addr.sin_addr), TX_PORT);
-    }
-    
+
     int samples_read = bytes_read / sizeof(int16_t) / 2;  // I/Q pairs
     
     for (int i = 0; i < samples_read; i++) {

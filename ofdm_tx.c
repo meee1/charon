@@ -76,6 +76,7 @@ int ofdm_sample_count=0;
     ofdm_sample_count += (OFDM_M + CP_LEN);
 
     if(ofdm_last_symbol) {
+      fprintf(stderr, "ofdm_get_sample_count: len: %d samples: %d\n", payload_len, ofdm_sample_count);
       return ofdm_sample_count;
     }
 
@@ -108,6 +109,14 @@ void init_ofdm_tx() {
      ofdm_fg = ofdmflexframegen_create(ofdm_M,ofdm_cp_len,ofdm_taper_len,ofdm_p,&ofdm_fgprops);
 
     ofdmflexframegen_print(ofdm_fg);
+
+      
+    ofdm_get_sample_count(1);
+    ofdm_get_sample_count(256);
+    ofdm_get_sample_count(128);
+    ofdm_get_sample_count(1024);
+    ofdm_get_sample_count(1600);
+    ofdm_get_sample_count(2000);
 
     timer1 = create_timer();
 }

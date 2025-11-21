@@ -46,7 +46,7 @@
 #include "ethernet.h"
 
 static struct device *dev;
-static int debug_tap=0;
+static int debug_tap=1;
 
 static FILE *tap_f;
 
@@ -172,10 +172,11 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
  udp_hdr *udp = (udp_hdr *) &(ethframe->ip_proto_payload);
  uint8_t *payload = (uint8_t *) tcp->payload;
 
- nbytes = read(dev->tun_fd, _buffer, 2342);//is this source of memory leak, try copy 
- memcpy(buffer,_buffer,nbytes);
+ nbytes = read(dev->tun_fd, _buffer, 2342);//is this source of memory leak, try copy
 
  if(nbytes<=0) return 0;
+
+ memcpy(buffer,_buffer,nbytes);
 
   memcpy(dst_mac, mac_all_zero, 6);
     
@@ -235,13 +236,13 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
       }
 
 
- // if(nbytes>0 && debug_tap) {
- //  fprintf(stderr,"\n\nRead %d bytes from ofdm0\n", nbytes);
+  if(nbytes>0 && debug_tap) {
+   fprintf(stderr,"\n\nRead %d bytes from ofdm0\n", nbytes);
  //  for(i=0;i<nbytes;i++) {
  //    if(i%32==0) fprintf(stderr,"\n");
  //    fprintf(stderr,"%02x,", buffer[i]);
  //  }
- // }
+  }
  return nbytes;
 }
 /////////////////////////////////////////////////////////////////////////////////////
@@ -294,13 +295,13 @@ batman_frame_special *batspecial = (batman_frame_special *) buffer;
   }
 
 
- //if(len>0 && debug_tap) {
- //  fprintf(stderr,"\n\nRF_IN -> writing %d bytes to ofdm0\n", len);
+ if(len>0 && debug_tap) {
+   fprintf(stderr,"\n\nRF_IN -> writing %d bytes to ofdm0\n", len);
  //  for(i=0;i<len;i++) {
  //    if(i%32==0) fprintf(stderr,"\n");
  //    fprintf(stderr,"%02x,", buffer[i]);
  //  }
- // }
+  }
 
   i = write(dev->tun_fd, buffer, len);
   return i; 
