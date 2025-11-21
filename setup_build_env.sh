@@ -163,12 +163,12 @@ echo "Adding Linux kernel config options..."
 cd plutosdr-fw
 echo "CONFIG_TUN=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_BRIDGE=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV_BLA=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV_DAT=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV_MCAST=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV_BATMAN_V=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV_DEBUG=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_BLA=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_DAT=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_MCAST=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_BATMAN_V=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_DEBUG=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULES=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULE_FORCE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
