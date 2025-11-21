@@ -46,7 +46,12 @@ echo "Adding additional packages to buildroot config..."
 echo "BR2_PACKAGE_BRIDGE_UTILS=y" >> buildroot/configs/zynq_pluto_defconfig
 echo "BR2_PACKAGE_LIQUID_DSP_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
 echo "BR2_PACKAGE_FFTW_SINGLE=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_FFTW_USE_NEON=y" >> buildroot/configs/zynq_pluto_defconfig
 echo "BR2_PACKAGE_STRACE=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_FFTW_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_BATMAN_ADV=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_BATMAN_ADV_DEBUG=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_BATMAN_ADV_BATMAN_V=y" >> buildroot/configs/zynq_pluto_defconfig
 
 # Fix liquid-dsp for Cortex-A9 (PlutoSDR has Zynq-7000 with Cortex-A9, not A7)
 echo "Patching liquid-dsp makefile for Cortex-A9..."
@@ -158,7 +163,12 @@ echo "Adding Linux kernel config options..."
 cd plutosdr-fw
 echo "CONFIG_TUN=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_BRIDGE=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
-echo "CONFIG_BATMAN_ADV=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_BLA=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_DAT=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_MCAST=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_BATMAN_V=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+echo "CONFIG_BATMAN_ADV_DEBUG=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULES=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig
 echo "CONFIG_MODULE_FORCE_UNLOAD=y" >> linux/arch/arm/configs/zynq_pluto_defconfig

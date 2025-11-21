@@ -71,7 +71,13 @@ jobs:
           
           echo "BR2_PACKAGE_LIQUID_DSP_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
           echo "BR2_PACKAGE_FFTW_SINGLE=y" >> buildroot/configs/zynq_pluto_defconfig
+          echo "BR2_PACKAGE_FFTW_USE_NEON=y" >> buildroot/configs/zynq_pluto_defconfig
           echo "BR2_PACKAGE_STRACE=y" >> buildroot/configs/zynq_pluto_defconfig
+          echo "BR2_PACKAGE_FFTW_FAST=y" >> buildroot/configs/zynq_pluto_defconfig
+
+          echo "BR2_PACKAGE_BATMAN_ADV=y" >> buildroot/configs/zynq_pluto_defconfig
+          echo "BR2_PACKAGE_BATMAN_ADV_DEBUG=y" >> buildroot/configs/zynq_pluto_defconfig
+          echo "BR2_PACKAGE_BATMAN_ADV_BATMAN_V=y" >> buildroot/configs/zynq_pluto_defconfig
 
           sed -i 's#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)\
           define LIQUID_DSP_FIX_CORTEX_A9\
@@ -164,7 +170,14 @@ jobs:
           
           echo "CONFIG_TUN=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
           echo "CONFIG_BRIDGE=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+
           echo "CONFIG_BATMAN_ADV=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV_BLA=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV_DAT=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV_MCAST=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV_BATMAN_V=v" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+          echo "CONFIG_BATMAN_ADV_DEBUG=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
+
           echo "CONFIG_MODULES=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
           echo "CONFIG_MODULE_UNLOAD=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
           echo "CONFIG_MODULE_FORCE_UNLOAD=y" >> plutosdr-fw/linux/arch/arm/configs/zynq_pluto_defconfig
