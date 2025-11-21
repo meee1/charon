@@ -39,7 +39,8 @@ PLATFORM := $(shell uname -s)
 
 
 OUT_DIR := .build
-SRC := $(foreach dir, $(DIRS), $(wildcard $(dir)/*$(SUFFIX)))
+ALL_SRC := $(wildcard charon.c config.c crc.c glibc_compat.c ofdm_rx.c ofdm_tx.c tap_device.c tcp_subs.c timers.c util.c)
+SRC := $(ALL_SRC) pluto.c
 OBJ_ := $(SRC:$(SUFFIX)=.o)
 OBJ := $(addprefix $(OUT_DIR)/,$(OBJ_))
 DEPS := $(OBJ:.o=.d)
@@ -68,6 +69,8 @@ endif
 
 .SUFFIXES:
 .PHONY: clean host
+
+all: charon
 
 host:
 	@echo "Building for host architecture..."

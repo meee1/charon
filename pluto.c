@@ -157,7 +157,7 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
-      rxbuf = iio_device_create_buffer(rx_dev, 5000, false); //32768 needed for high rate 12.5khz channel
+      rxbuf = iio_device_create_buffer(rx_dev, 11200, false); //32768 needed for high rate 12.5khz channel
 
 
       if (!rxbuf) {
@@ -184,7 +184,7 @@ struct iio_context * pluto_init_txrx() {
       q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
 
       txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
-      //fprintf(stderr, "\npluto tx buffer size: %d", ofdm_get_symbol_count(PAYLOAD_LEN) ); 
+      fprintf(stderr, "\npluto tx buffer size: %d , buffer: %d", ofdm_get_symbol_count(PAYLOAD_LEN) , (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4 ); 
 
       if (!txbuf) {
           perror("Could not create TX buffer");

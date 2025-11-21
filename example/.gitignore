@@ -1,0 +1,24 @@
+# Compiled binaries
+ofdm_loopback_example
+ofdm_file_transfer
+
+# Object files
+*.o
+
+# Test files
+test_*.txt
+test_*.bin
+received_*.txt
+received_*.bin
+received_*
+*.dat
+
+# Editor backup files
+*~
+*.swp
+*.swo
+
+# Debug files
+*.dSYM/
+core
+vgcore.*
