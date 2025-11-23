@@ -137,66 +137,66 @@ char *tok3;
 char *tok4;
 char *tok5;
 char *tok6;
-char *tok7;
-char *tok8;
 
   memset(line,0x00,sizeof(line));
-  if((fp = fopen("/sys/kernel/debug/batman_adv/bat0/originators","r")) != NULL){
-    if(fp==NULL) return 0;
+  if((fp = popen("batctl o","r")) != NULL){
 
     while(fgets(line,sizeof(line),fp)!=NULL){
-      if(line[0]==' ') {
+      // skip header lines starting with '[' or "   Originator"
+      if(line[0]=='[' || strncmp(line, "   Originator", 13)==0) {
         memset(line,0x00,sizeof(line));
         continue;
       }
 
-      if( strncmp(org_dest_mac_a, &line[0], strlen(org_dest_mac_a))==0 ) {
-        ptr = &line[strlen(org_dest_mac_a)];
+      // data lines start with " * " for best route
+      // format: " * 14:25:66:9b:f7:d9    0.600s   ( 26) 14:25:66:9b:f7:d9 [     ofdm0]"
+      if(line[0]==' ' && line[1]=='*' && line[2]==' ') {
+        ptr = &line[3]; // skip " * "
 
-        tok1 = strtok(ptr, " ");
+        tok1 = strtok(ptr, " "); // originator MAC
         if(tok1==NULL) goto clean;
-          //fprintf(stderr, "\ntok1: %s", tok1);
 
-        tok2 = strtok(NULL, ")");
+        if( strncmp(org_dest_mac_a, tok1, strlen(org_dest_mac_a))!=0 ) {
+          memset(line,0x00,sizeof(line));
+          continue;
+        }
+
+        tok2 = strtok(NULL, " "); // last-seen time
         if(tok2==NULL) goto clean;
 
-        tok3 = strtok(NULL, " "); //this is the next hop for this originator
+        tok3 = strtok(NULL, ")"); // TQ value with '('
         if(tok3==NULL) goto clean;
 
-        tok4 = strtok(NULL, " "); 
+        tok4 = strtok(NULL, " "); // nexthop MAC
         if(tok4==NULL) goto clean;
-        tok5 = strtok(NULL, " "); 
-        if(tok5==NULL) goto clean;
-        tok6 = strtok(NULL, " "); 
-        if(tok6==NULL) goto clean;  //next potential hop
 
-          if( strlen(tok3) < 17 ) goto clean;
+        if( strlen(tok4) < 17 ) goto clean;
 
-          fprintf(stderr, "\nnext hop-> %s", tok3);
-          tok3[2] = 0;
-          tok3[5] = 0;
-          tok3[8] = 0;
-          tok3[11] = 0;
-          tok3[14] = 0;
-          dst_route[0] = strtol(&tok3[0],NULL,16);
-          dst_route[1] = strtol(&tok3[3],NULL,16);
-          dst_route[2] = strtol(&tok3[6],NULL,16);
-          dst_route[3] = strtol(&tok3[9],NULL,16);
-          dst_route[4] = strtol(&tok3[12],NULL,16);
-          dst_route[5] = strtol(&tok3[15],NULL,16);
+        fprintf(stderr, "\nnext hop-> %s", tok4);
+        tok4[2] = 0;
+        tok4[5] = 0;
+        tok4[8] = 0;
+        tok4[11] = 0;
+        tok4[14] = 0;
+        dst_route[0] = strtol(&tok4[0],NULL,16);
+        dst_route[1] = strtol(&tok4[3],NULL,16);
+        dst_route[2] = strtol(&tok4[6],NULL,16);
+        dst_route[3] = strtol(&tok4[9],NULL,16);
+        dst_route[4] = strtol(&tok4[12],NULL,16);
+        dst_route[5] = strtol(&tok4[15],NULL,16);
 
-        fclose(fp);
+        pclose(fp);
         return 1;
       }
       memset(line,0x00,sizeof(line));
     }
-    goto clean; 
-  } else {                    
-    perror("read_config:fopen:");
-    goto clean; 
+    goto clean;
+  } else {
+    perror("is_batman_route:popen:");
+    goto clean;
   }
 
 clean:
-if(fp!=NULL) fclose(fp);
+if(fp!=NULL) pclose(fp);
   return 0;
 }
