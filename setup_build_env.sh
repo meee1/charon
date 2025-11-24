@@ -53,6 +53,9 @@ echo "BR2_PACKAGE_BATMAN_ADV=y" >> buildroot/configs/zynq_pluto_defconfig
 echo "BR2_PACKAGE_BATMAN_ADV_DEBUG=y" >> buildroot/configs/zynq_pluto_defconfig
 echo "BR2_PACKAGE_BATMAN_ADV_BATMAN_V=y" >> buildroot/configs/zynq_pluto_defconfig
 
+echo "BR2_PACKAGE_VALGRIND=y" >> buildroot/configs/zynq_pluto_defconfig
+echo "BR2_PACKAGE_VALGRIND_CALLGRIND=y" >> buildroot/configs/zynq_pluto_defconfig
+
 # Fix liquid-dsp for Cortex-A9 (PlutoSDR has Zynq-7000 with Cortex-A9, not A7)
 echo "Patching liquid-dsp makefile for Cortex-A9..."
 sed -i 's#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)#LIQUID_DSP_CFLAGS = $(TARGET_CFLAGS)\
