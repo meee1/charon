@@ -58,11 +58,10 @@ crc.c             CRC-32 calculations
 timers.c          Microsecond-resolution timers (gettimeofday-based)
 glibc_compat.c    glibc compatibility shims (strtol/strtoll wrapping)
 
-ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 8x decimation)
+ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC)
 ofdm.h            liquid-dsp internal struct definitions
 ethernet.h        Ethernet frame structures
 
-filters/pluto/    Pre-calculated FIR filter coefficients (131 KB)
 third_party/      Bundled libfec (FEC) and libtuntap (TAP device)
 example/          Host-mode loopback and file transfer examples
 ```
@@ -109,7 +108,7 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
   - Uses `pluto_host.c` instead of `pluto.c`
 
 ### Key Dependencies
-- **liquid-dsp** — OFDM PHY layer (ofdmflexframegen, ofdmflexframesync, FIR filters)
+- **liquid-dsp** — OFDM PHY layer (ofdmflexframegen, ofdmflexframesync, NCO, modem)
 - **libiio** / **libad9361-iio** — AD9361 RF transceiver hardware control
 - **FFTW3** — FFT (used by liquid-dsp)
 - **libfec** — Forward error correction (Viterbi, Reed-Solomon)
@@ -118,8 +117,6 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 ## Critical Constraints (DO NOT)
 
-- **Do not modify OFDM parameters** in `ofdm_conf.h` without regenerating FIR filters in `filters/pluto/pluto_filters.h`. The filter coefficients are tightly coupled to the 8x decimation factor and 64-subcarrier configuration.
-- **Do not change `sample_freq_hz`** — it is fixed at 11.2 MHz hardware / 1.4 MHz decimated.
 - **Do not remove `maxcpus`** u-boot setting — it enables the second CPU core needed for real-time sample processing.
 - **Do not set `enable_charon=0`** unless intentionally disabling mesh mode.
 

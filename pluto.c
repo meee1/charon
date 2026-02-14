@@ -32,7 +32,6 @@
 #include <float.h>
   
 #include "liquid/liquid.h"
-#include "filters/pluto/pluto_filters.h"
 #include "ad9361.h"
 
 #include "pluto.h"
@@ -73,23 +72,12 @@ static int pluto_tx_initialized=0;
 
 static int tx_enabled=0;
 
-static unsigned int M=DECIMATE_INTERPOLATE_FACTOR;       // interpolation factor
-static unsigned int h_len;     // interpolation filter length
-
-    // design filter and create interpolator
-static float h[2048];         // filter coefficients
-static firinterp_crcf q;
-
-
-// generate input signal and interpolate
 static float complex x;        // input sample
-static float complex y[DECIMATE_INTERPOLATE_FACTOR];     // output samples
 static int nbytes_tx;
 static int llen;
 static int buf_index=0;
 static int tx_mod=0;
 static int ii=0;
-static int jj=0;
 static int n_rx;
 
 static long long prev_gain;
@@ -138,10 +126,6 @@ struct iio_context * pluto_init_txrx() {
 
     ad9361_set_bb_rate_custom_filter_auto	(phy, sample_freq_hz);
 
-    //pluto_enable_fir(0);
-    //pluto_set_filter();
-    //pluto_enable_fir(1);
-
     pluto_set_out_gain( -80 );
 
     iio_channel_attr_write(
@@ -176,15 +160,7 @@ struct iio_context * pluto_init_txrx() {
     //TX Buffer
     if(!pluto_tx_initialized) {
 
-      //h_len = OFDM_TX_HLEN; 
-      h_len = estimate_req_filter_len( (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)), OFDM_TX_STOP_DB );
-      fprintf(stderr, "\ntx h_len: %d", h_len);
-
-      liquid_firdes_kaiser(h_len,  (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)),  OFDM_TX_STOP_DB,0.0f,h);
-      q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
-
-      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
-      //fprintf(stderr, "\npluto tx buffer size: %d , buffer: %d", ofdm_get_sample_count(PAYLOAD_LEN) , (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4 ); 
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)/4, false); //0==auto 
 
       if (!txbuf) {
           perror("Could not create TX buffer");
@@ -200,20 +176,6 @@ struct iio_context * pluto_init_txrx() {
 
 
     return ctx;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////
-void pluto_set_filter() {
-  iio_device_attr_write_raw( phy, 
-        "filter_fir_config", 
-        LTE1p4_MHz_ftr, 
-        LTE1p4_MHz_ftr_len);
-}
-///////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////
-void pluto_enable_fir(int enable) {
-  ad9361_set_trx_fir_enable(phy, enable);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -439,12 +401,8 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 
       x = buffer[ii];
 
-      firinterp_crcf_execute(q, x, y);  //interpolate
-
-      for(jj=0; jj<DECIMATE_INTERPOLATE_FACTOR; jj++) {
-
-        ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( y[jj] )*8192.0));  //scale to work well for OFDM waveforms
-        ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( y[jj] )*8192.0));
+        ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( x )*8192.0));  //scale to work well for OFDM waveforms
+        ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( x )*8192.0));
 
         tx_p_dat += tx_p_inc;
 
@@ -454,7 +412,6 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
           tx_p_end = (char *) iio_buffer_end(txbuf);
           more_tx_data=1;
         }
-      }
 
     }
     

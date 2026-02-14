@@ -14,7 +14,7 @@ This creates the `charon-host` binary for x86-64/ARM64 host systems.
 
 The host build uses `pluto_host.c` instead of `pluto.c`, replacing libiio/AD9361 hardware calls with UDP sockets:
 
-- **TX Socket**: Port 5001 - Sends interpolated IQ samples (int16_t pairs) via UDP
+- **TX Socket**: Port 5001 - Sends IQ samples (int16_t pairs) via UDP
 - **RX Socket**: Port 5002 - Receives IQ samples (int16_t pairs) for demodulation via UDP
 
 Both sockets operate in non-blocking mode. The TX destination is automatically learned from the first RX packet source address.
@@ -36,12 +36,12 @@ The system automatically learns the TX destination from the first packet receive
 
 ### Transmit Path
 ```
-TAP device → OFDM modulator → FIR interpolation (8x) → UDP port 5001
+TAP device → OFDM modulator → UDP port 5001
 ```
 
 ### Receive Path  
 ```
-UDP port 5002 → FIR decimation (8x) → OFDM demodulator → TAP device
+UDP port 5002 → OFDM demodulator → TAP device
 ```
 
 ## Integration with SDR Hardware

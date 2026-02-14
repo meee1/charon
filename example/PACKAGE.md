@@ -6,9 +6,9 @@ This example package contains standalone applications demonstrating Charon's OFD
 
 ### Source Files
 
-1. **ofdm_loopback_example.c** (550+ lines)
+1. **ofdm_loopback_example.c**
    - Complete OFDM TX/RX loopback demonstration
-   - Shows frame generation, interpolation, channel simulation, decimation, and reception
+   - Shows frame generation, channel simulation, and reception
    - Self-contained test with payload verification
    - Educational comments explaining each step
 
@@ -66,9 +66,8 @@ This example package contains standalone applications demonstrating Charon's OFD
 All examples use **identical** OFDM parameters to Charon:
 
 ```c
-Sample Rate:        11.2 MHz        (PlutoSDR AD9361 hardware rate)
-Decimation:         8x              (1.4 MHz effective rate)
-Occupied BW:        ~140 kHz        (narrow-band)
+Sample Rate:        1.4 MHz         (OFDM rate, AD9361 handles filtering)
+Occupied BW:        ~1.4 MHz
 Subcarriers:        64              (OFDM-64)
 Cyclic Prefix:      4 samples
 Taper:              2 samples
@@ -120,10 +119,7 @@ cat received.txt
 - Creating OFDM frame generator (`ofdmflexframegen`)
 - Configuring FEC, modulation, and CRC
 - Generating OFDM symbols
-- Designing decimation/interpolation filters
-- Implementing interpolator (`firinterp_crcf`)
 - Simulating AWGN channel
-- Implementing decimator (`firdecim_crcf`)
 - Creating OFDM frame synchronizer (`ofdmflexframesync`)
 - Callback-based frame reception
 - Payload verification
@@ -225,7 +221,6 @@ agc_crcf_execute(agc, sample_in, &sample_out);
 
 ### What's Included (from Charon)
 - ✓ OFDM PHY layer (TX/RX)
-- ✓ Decimation/interpolation filters
 - ✓ Same modulation/FEC parameters
 - ✓ Frame structure
 
@@ -268,7 +263,6 @@ agc_crcf_execute(agc, sample_in, &sample_out);
 
 ### For Learning OFDM
 - See complete TX/RX implementation
-- Understand decimation/interpolation
 - Experiment with parameters safely
 - No hardware required
 

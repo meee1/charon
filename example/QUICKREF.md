@@ -46,9 +46,8 @@ Transfer files over simulated OFDM link
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Sample Rate | 11.2 MHz | Hardware rate on PlutoSDR |
-| Decimation Factor | 8 | Reduces to 1.4 MHz |
-| Occupied BW | ~140 kHz | After decimation |
+| Sample Rate | 1.4 MHz | OFDM rate, AD9361 handles filtering |
+| Occupied BW | ~1.4 MHz | Direct OFDM bandwidth |
 | Subcarriers | 64 | OFDM-64 |
 | Cyclic Prefix | 4 samples | |
 | Taper | 2 samples | |
@@ -66,10 +65,7 @@ Edit the `#define` values at the top of each .c file:
 #define OFDM_M              64              // Subcarriers
 #define OFDM_MODULATION     LIQUID_MODEM_QAM16  // Modulation
 #define PAYLOAD_LEN         256             // Frame size
-#define DECIMATE_INTERPOLATE_FACTOR 8       // Decimation
 ```
-
-**Warning:** Changing OFDM parameters requires careful filter redesign!
 
 ## Troubleshooting
 

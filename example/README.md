@@ -54,16 +54,13 @@ This will build all example applications.
 - Creates an OFDM frame generator (`ofdmflexframegen`)
 - Creates an OFDM frame synchronizer (`ofdmflexframesync`)
 - Generates a test frame with known payload
-- Interpolates samples by 8x (matching Charon's decimation factor)
 - Simulates a noisy channel
-- Decimates received samples by 8x
 - Synchronizes and decodes the frame
 - Verifies payload integrity
 
 **Configuration** (matching Charon):
-- Sample Rate: 11.2 MHz (hardware rate on PlutoSDR)
-- Decimation Factor: 8
-- Effective Bandwidth: 140 kHz
+- Sample Rate: 1.4 MHz
+- Bandwidth: ~1.4 MHz
 - Subcarriers: 64 (OFDM-64)
 - Modulation: QAM-16
 - FEC: SECDED7264 + HAMMING128
@@ -78,9 +75,8 @@ This will build all example applications.
 ```
 OFDM Loopback Example (based on Charon)
 ========================================
-Sample Rate: 11.20 MHz
-Decimation Factor: 8
-Effective BW: 1400.00 kHz
+Sample Rate: 1.40 MHz
+OFDM BW: 1400.00 kHz
 Subcarriers: 64
 Modulation: QAM-16
 FEC: SECDED7264 + HAMMING128
@@ -109,9 +105,9 @@ Results:
 **What it does**:
 - Reads a file from disk
 - Fragments it into multiple OFDM frames (1024 bytes per frame)
-- Transmits all frames with interpolation
+- Transmits all frames
 - Simulates a noisy channel
-- Receives and decimates samples
+- Receives and decodes samples
 - Reassembles frames into complete file
 - Calculates throughput and success rate
 
@@ -136,8 +132,7 @@ diff test.txt received.txt
 OFDM File Transfer Example
 ===========================
 Configuration:
-  Sample Rate: 11.20 MHz
-  Decimation: 8x
+  Sample Rate: 1.40 MHz
   OFDM Subcarriers: 64
   Modulation: QAM-16
   FEC: SECDED7264 + HAMMING128
@@ -219,52 +214,21 @@ ofdmflexframesync fs = ofdmflexframesync_create(
 );
 ```
 
-#### 3. Decimation Filter (`firdecim_crcf`)
-```c
-// Design lowpass filter for decimation
-liquid_firdes_kaiser(h_len, fc, stop_db, 0.0f, h);
-
-// Create decimator (8x)
-firdecim_crcf decim = firdecim_crcf_create(8, h, h_len);
-
-// Execute decimation
-firdecim_crcf_execute(decim, input_samples, &output_sample);
-```
-
-#### 4. Interpolation Filter (`firinterp_crcf`)
-```c
-// Design lowpass filter for interpolation
-liquid_firdes_kaiser(h_len, fc, stop_db, 0.0f, h);
-
-// Create interpolator (8x)
-firinterp_crcf interp = firinterp_crcf_create(8, h, h_len);
-
-// Execute interpolation
-firinterp_crcf_execute(interp, input_sample, output_samples);
-```
-
 ### Signal Flow
 
 ```
 TX Path:
-  Payload → OFDM Frame Gen → OFDM Symbols → Interpolator (8x) → RF Samples
-           (ofdmflexframegen)            (firinterp_crcf)
+  Payload → OFDM Frame Gen → OFDM Symbols → RF Samples
+           (ofdmflexframegen)
 
 RX Path:
-  RF Samples → Decimator (8x) → OFDM Symbols → OFDM Frame Sync → Payload
-              (firdecim_crcf)               (ofdmflexframesync)
+  RF Samples → OFDM Frame Sync → Payload
+              (ofdmflexframesync)
 ```
 
-### Why Decimation/Interpolation?
-
-Charon uses decimation by 8x to reduce the computational load:
-
-- **Hardware sample rate**: 11.2 MHz (AD9361 on PlutoSDR)
-- **After decimation**: 1.4 MHz
-- **Occupied bandwidth**: ~140 kHz (with OFDM-64)
-- **Benefit**: 8x reduction in processing complexity while maintaining sufficient bandwidth
-
-The filters ensure that only the desired narrow band signal passes through, rejecting out-of-band interference.
+Samples are passed directly between OFDM modulation/demodulation and the RF hardware.
+The AD9361 on PlutoSDR handles sample rate conversion and filtering internally
+via `ad9361_set_bb_rate_custom_filter_auto`.
 
 ## Modifying the Examples
 
@@ -291,7 +255,7 @@ fgprops.fec0 = LIQUID_FEC_NONE;
 fgprops.fec1 = LIQUID_FEC_NONE;
 ```
 
-**Warning**: Changing OFDM parameters (subcarriers, CP length, etc.) requires rebuilding the decimation/interpolation filters with appropriate cutoff frequencies.
+**Warning**: Changing OFDM parameters (subcarriers, CP length, etc.) may affect the sample rate configuration on the AD9361.
 
 ## Relationship to Charon
 
@@ -299,8 +263,8 @@ These examples extract the core OFDM PHY layer from Charon and demonstrate it in
 
 | Charon Component | Example Equivalent |
 |------------------|-------------------|
-| `ofdm_tx.c` | OFDM frame generation + interpolation |
-| `ofdm_rx.c` | OFDM frame sync + decimation |
+| `ofdm_tx.c` | OFDM frame generation |
+| `ofdm_rx.c` | OFDM frame sync |
 | `pluto.c` | Replaced by simulated channel |
 | `tap_device.c` | Not needed (direct payload access) |
 | `charon.c` (MAC layer) | Not included (PHY only) |
