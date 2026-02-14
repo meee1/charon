@@ -30,13 +30,8 @@
 #define OFDM_FEC1           LIQUID_FEC_HAMMING128
 #define OFDM_CRC            LIQUID_CRC_32
 
-// Decimation/Interpolation
-#define DECIMATE_INTERPOLATE_FACTOR 8
-#define SAMPLE_RATE_HZ      11200000
-#define OFDM_TX_BW_FACTOR   1.15
-#define OFDM_RX_BW_FACTOR   (OFDM_TX_BW_FACTOR * 0.8)
-#define OFDM_TX_STOP_DB     80.0
-#define OFDM_RX_STOP_DB     80.0
+// Sample rate (OFDM rate, no oversampling)
+#define SAMPLE_RATE_HZ      1400000
 
 // Frame size
 #define PAYLOAD_LEN         256  // Match loopback example for testing
@@ -141,7 +136,6 @@ int ofdm_rx_callback(unsigned char *  _header,
  */
 int transmit_file(const char *filename,
                   ofdmflexframegen fg,
-                  firinterp_crcf interp,
                   float complex **tx_buffer_out,
                   int *tx_buffer_len_out,
                   transfer_stats_t *stats)
@@ -177,7 +171,7 @@ int transmit_file(const char *filename,
     
     // Estimate total samples needed (increased for safety)
     int samples_per_frame = (OFDM_M + CP_LEN) * num_frames; // Increased estimate
-    int total_samples = (num_frames * samples_per_frame * DECIMATE_INTERPOLATE_FACTOR); // Extra for padding
+    int total_samples = (num_frames * samples_per_frame); // Extra for padding
     
     float complex *tx_buffer = malloc(total_samples * sizeof(float complex));
     if (!tx_buffer) {
@@ -192,11 +186,6 @@ int transmit_file(const char *filename,
     
     printf("[TX] Transmitting frames: ");
     fflush(stdout);
-    
-    // Reset interpolator
-    firinterp_crcf_reset(interp);
-
-    firinterp_crcf_print(interp);
     
     // Transmit each frame
     for (int frame = 0; frame < num_frames; frame++) {
@@ -219,7 +208,7 @@ int transmit_file(const char *filename,
         ofdmflexframegen_reset(fg);
         ofdmflexframegen_assemble(fg, header, payload, PAYLOAD_LEN);
         
-        // Generate and interpolate symbols
+        // Generate symbols and output directly
         int last_symbol = 0;
         int symbol_count = 0;
         while (!last_symbol) {
@@ -231,13 +220,8 @@ int transmit_file(const char *filename,
             ofdmflexframegen_print(fg);
 
             for (int i = 0; i < (OFDM_M + CP_LEN); i++) {
-                float complex interp_samples[DECIMATE_INTERPOLATE_FACTOR];
-                firinterp_crcf_execute(interp, symbol_buffer[i], interp_samples);
-                                
-                for (int j = 0; j < DECIMATE_INTERPOLATE_FACTOR; j++) {
-                    if (tx_index < total_samples) {
-                        tx_buffer[tx_index++] = interp_samples[j];
-                    }
+                if (tx_index < total_samples) {
+                    tx_buffer[tx_index++] = symbol_buffer[i];
                 }
             }
         }
@@ -276,7 +260,6 @@ int transmit_file(const char *filename,
 int receive_file(float complex *tx_buffer,
                  int tx_buffer_len,
                  ofdmflexframesync fs,
-                 firdecim_crcf decim,
                  const char *output_file,
                  transfer_stats_t *stats)
 {
@@ -285,7 +268,6 @@ int receive_file(float complex *tx_buffer,
     
     // Reset frame sync
     ofdmflexframesync_reset(fs);
-    firdecim_crcf_reset(decim);
     
     // Allocate receive buffer (must be large enough for entire file)
     rx_state.rx_buffer = malloc(stats->bytes_sent + 1024);
@@ -301,24 +283,12 @@ int receive_file(float complex *tx_buffer,
     
     stats->start_time = get_time_sec();
     
-    // Process samples through decimator and frame sync
-    float complex decim_input[DECIMATE_INTERPOLATE_FACTOR];
-    float complex decim_output;
-    int decim_index = 0;
-    int samples_processed = 0;
-    
+    // Feed samples directly to frame synchronizer
     for (int i = 0; i < tx_buffer_len; i++) {
-        decim_input[decim_index++] = tx_buffer[i];
-        
-        if (decim_index == DECIMATE_INTERPOLATE_FACTOR) {
-            decim_index = 0;
-            firdecim_crcf_execute(decim, decim_input, &decim_output);
-            ofdmflexframesync_execute(fs, &decim_output, 1);
-            samples_processed++;
-        }
+        ofdmflexframesync_execute(fs, &tx_buffer[i], 1);
     }
     
-    fprintf(stderr, "\n[DEBUG] Processed %d decimated samples\n", samples_processed);
+    fprintf(stderr, "\n[DEBUG] Processed %d samples\n", tx_buffer_len);
     
     stats->end_time = get_time_sec();
     
@@ -359,7 +329,6 @@ int main(int argc, char *argv[])
     printf("===========================\n");
     printf("Configuration:\n");
     printf("  Sample Rate: %.2f MHz\n", SAMPLE_RATE_HZ / 1e6);
-    printf("  Decimation: %dx\n", DECIMATE_INTERPOLATE_FACTOR);
     printf("  OFDM Subcarriers: %d\n", OFDM_M);
     printf("  Modulation: QAM-16\n");
     printf("  FEC: SECDED7264 + HAMMING128\n");
@@ -385,35 +354,6 @@ int main(int argc, char *argv[])
     ofdmflexframegen fg = ofdmflexframegen_create(OFDM_M, CP_LEN, TAPER_LEN,
                                                    p_tx, &fgprops);
     
-    unsigned int h_interp_len = estimate_req_filter_len(
-        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_TX_BW_FACTOR),
-        OFDM_TX_STOP_DB);
-    
-    printf("[TX] Interpolator filter length: %u\n", h_interp_len);
-    
-    float *h_interp = malloc(h_interp_len * sizeof(float));
-    if (!h_interp) {
-        fprintf(stderr, "Error: Cannot allocate filter coefficients\n");
-        return 1;
-    }
-    
-    liquid_firdes_kaiser(h_interp_len,
-                        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_TX_BW_FACTOR),
-                        OFDM_TX_STOP_DB, 0.0f, h_interp);
-    
-    // Debug: check filter coefficients
-    fprintf(stderr, "[DEBUG] First 5 filter taps: ");
-    for (unsigned int i = 0; i < 5 && i < h_interp_len; i++) {
-        fprintf(stderr, "%.6f ", h_interp[i]);
-    }
-    fprintf(stderr, "\n");
-    
-    firinterp_crcf interp = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,
-                                                   h_interp, h_interp_len);
-    
-    // Note: Don't free h_interp yet - interpolator may need it
-    free(h_interp);
-    
     // ===========================
     // RX Setup
     // ===========================
@@ -428,18 +368,6 @@ int main(int argc, char *argv[])
     printf("\n[RX] OFDM Frame Synchronizer created\n");
     ofdmflexframesync_print(fs);
     
-    unsigned int h_decim_len = estimate_req_filter_len(
-        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_RX_BW_FACTOR),
-        OFDM_RX_STOP_DB);
-    
-    float h_decim[h_decim_len];
-    liquid_firdes_kaiser(h_decim_len,
-                        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_RX_BW_FACTOR),
-                        OFDM_RX_STOP_DB, 0.0f, h_decim);
-    
-    firdecim_crcf decim = firdecim_crcf_create(DECIMATE_INTERPOLATE_FACTOR,
-                                               h_decim, h_decim_len);
-    
     // ===========================
     // Transmit File
     // ===========================
@@ -447,7 +375,7 @@ int main(int argc, char *argv[])
     float complex *tx_buffer = NULL;
     int tx_buffer_len = 0;
     
-    if (transmit_file(input_file, fg, interp, &tx_buffer, 
+    if (transmit_file(input_file, fg, &tx_buffer, 
                      &tx_buffer_len, &stats) < 0) {
         return 1;
     }
@@ -471,7 +399,7 @@ int main(int argc, char *argv[])
     // Receive File
     // ===========================
     
-    if (receive_file(tx_buffer, tx_buffer_len, fs, decim, 
+    if (receive_file(tx_buffer, tx_buffer_len, fs, 
                     output_file, &stats) < 0) {
         free(tx_buffer);
         return 1;
@@ -537,8 +465,6 @@ int main(int argc, char *argv[])
     
     ofdmflexframegen_destroy(fg);
     ofdmflexframesync_destroy(fs);
-    firinterp_crcf_destroy(interp);
-    firdecim_crcf_destroy(decim);
     
     return (stats.bytes_received == stats.bytes_sent) ? 0 : 1;
 }

@@ -5,8 +5,7 @@
  * This example demonstrates:
  * - OFDM frame generation with ofdmflexframegen
  * - OFDM frame synchronization with ofdmflexframesync
- * - Decimation/interpolation with firdecim_crcf and firinterp_crcf
- * - Loopback transmission and reception
+ * - Direct sample loopback transmission and reception
  * 
  * Compile: gcc -o ofdm_loopback_example ofdm_loopback_example.c -lliquid -lm -lfftw3f
  * Run: ./ofdm_loopback_example
@@ -29,13 +28,8 @@
 #define OFDM_FEC1           LIQUID_FEC_HAMMING128
 #define OFDM_CRC            LIQUID_CRC_32
 
-// Decimation/Interpolation Configuration
-#define DECIMATE_INTERPOLATE_FACTOR 8
-#define SAMPLE_RATE_HZ      11200000        // 11.2 MHz
-#define OFDM_TX_BW_FACTOR   1.15
-#define OFDM_RX_BW_FACTOR   (OFDM_TX_BW_FACTOR * 0.8)
-#define OFDM_TX_STOP_DB     80.0
-#define OFDM_RX_STOP_DB     80.0
+// Sample rate (OFDM rate, no oversampling)
+#define SAMPLE_RATE_HZ      1400000         // 1.4 MHz
 
 // Payload size
 #define PAYLOAD_LEN         256             // Bytes
@@ -89,9 +83,7 @@ int main(int argc, char *argv[])
     printf("OFDM Loopback Example (based on Charon)\n");
     printf("========================================\n");
     printf("Sample Rate: %.2f MHz\n", SAMPLE_RATE_HZ / 1e6);
-    printf("Decimation Factor: %d\n", DECIMATE_INTERPOLATE_FACTOR);
-    printf("Effective BW: %.2f kHz\n", 
-           (SAMPLE_RATE_HZ / DECIMATE_INTERPOLATE_FACTOR) / 1e3);
+    printf("OFDM BW: %.2f kHz\n", SAMPLE_RATE_HZ / 1e3);
     printf("Subcarriers: %d\n", OFDM_M);
     printf("Modulation: QAM-16\n");
     printf("FEC: SECDED7264 + HAMMING128\n\n");
@@ -119,24 +111,6 @@ int main(int argc, char *argv[])
     printf("[TX] OFDM Frame Generator:\n");
     ofdmflexframegen_print(fg);
     
-    // Create interpolator for TX
-    unsigned int h_interp_len = estimate_req_filter_len(
-        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_TX_BW_FACTOR),
-        OFDM_TX_STOP_DB);
-    
-    printf("[TX] Interpolator filter length: %u\n", h_interp_len);
-    
-    float h_interp[h_interp_len];
-    liquid_firdes_kaiser(h_interp_len,
-                        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_TX_BW_FACTOR),
-                        OFDM_TX_STOP_DB,
-                        0.0f,
-                        h_interp);
-    
-    firinterp_crcf interp = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,
-                                                   h_interp,
-                                                   h_interp_len);
-    
     // ===========================
     // RX Setup
     // ===========================
@@ -151,24 +125,6 @@ int main(int argc, char *argv[])
     
     printf("\n[RX] OFDM Frame Synchronizer:\n");
     ofdmflexframesync_print(fs);
-    
-    // Create decimator for RX
-    unsigned int h_decim_len = estimate_req_filter_len(
-        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_RX_BW_FACTOR),
-        OFDM_RX_STOP_DB);
-    
-    printf("[RX] Decimator filter length: %u\n", h_decim_len);
-    
-    float h_decim[h_decim_len];
-    liquid_firdes_kaiser(h_decim_len,
-                        1.0 / (DECIMATE_INTERPOLATE_FACTOR * 2.0 * OFDM_RX_BW_FACTOR),
-                        OFDM_RX_STOP_DB,
-                        0.0f,
-                        h_decim);
-    
-    firdecim_crcf decim = firdecim_crcf_create(DECIMATE_INTERPOLATE_FACTOR,
-                                               h_decim,
-                                               h_decim_len);
     
     // ===========================
     // Prepare Test Payload
@@ -207,14 +163,11 @@ int main(int argc, char *argv[])
         sample_count += (OFDM_M + CP_LEN);
     }
     
-    printf("[TX] Frame requires %d symbols (%d samples at decimated rate)\n",
+    printf("[TX] Frame requires %d symbols (%d samples)\n",
            sample_count / (OFDM_M + CP_LEN), sample_count);
-    printf("[TX] After interpolation: %d samples at %.2f MHz\n",
-           sample_count * DECIMATE_INTERPOLATE_FACTOR,
-           SAMPLE_RATE_HZ / 1e6);
     
-    // Allocate buffer for interpolated samples
-    int tx_buffer_len = sample_count * DECIMATE_INTERPOLATE_FACTOR;
+    // Allocate buffer for samples
+    int tx_buffer_len = sample_count;
     float complex *tx_buffer = malloc(tx_buffer_len * sizeof(float complex));
     
     if (!tx_buffer) {
@@ -222,8 +175,8 @@ int main(int argc, char *argv[])
         return 1;
     }
     
-    // Reset frame generator and generate frame with interpolation
-    printf("[TX] Generating and interpolating frame...\n");
+    // Reset frame generator and generate frame
+    printf("[TX] Generating frame...\n");
     ofdmflexframegen_reset(fg);
     ofdmflexframegen_assemble(fg, header, payload, PAYLOAD_LEN);
     
@@ -234,27 +187,13 @@ int main(int argc, char *argv[])
         float complex symbol_buffer[OFDM_M + CP_LEN];
         last_symbol = ofdmflexframegen_write(fg, symbol_buffer, OFDM_M + CP_LEN);
         
-        // Interpolate each symbol
+        // Output samples directly to TX buffer
         for (int i = 0; i < (OFDM_M + CP_LEN); i++) {
-            float complex interp_samples[DECIMATE_INTERPOLATE_FACTOR];
-            firinterp_crcf_execute(interp, symbol_buffer[i], interp_samples);
-            
-            if (i == 0) {
-                fprintf(stderr, "[DEBUG] Loopback interp: in=%.3f%+.3fi, all_out: ",
-                        crealf(symbol_buffer[i]), cimagf(symbol_buffer[i]));
-                for (int k = 0; k < DECIMATE_INTERPOLATE_FACTOR; k++) {
-                    fprintf(stderr, "%.3f%+.3fi ", crealf(interp_samples[k]), cimagf(interp_samples[k]));
-                }
-                fprintf(stderr, "\n");
-            }
-            
-            for (int j = 0; j < DECIMATE_INTERPOLATE_FACTOR; j++) {
-                tx_buffer[tx_index++] = interp_samples[j];
-            }
+            tx_buffer[tx_index++] = symbol_buffer[i];
         }
     }
     
-    printf("[TX] Generated %d interpolated samples\n", tx_index);
+    printf("[TX] Generated %d samples\n", tx_index);
     
     // ===========================
     // Simulate Channel (loopback with optional noise/gain)
@@ -272,29 +211,18 @@ int main(int argc, char *argv[])
     }
     
     // ===========================
-    // Receive and Decimate
+    // Receive Samples
     // ===========================
     
     printf("\n[RX] Processing received samples...\n");
     frame_received = 0;
     
-    float complex decim_input[DECIMATE_INTERPOLATE_FACTOR];
-    float complex decim_output;
-    int decim_index = 0;
-    
     for (int i = 0; i < tx_index; i++) {
-        decim_input[decim_index++] = tx_buffer[i];
+        // Feed samples directly to frame synchronizer
+        ofdmflexframesync_execute(fs, &tx_buffer[i], 1);
         
-        if (decim_index == DECIMATE_INTERPOLATE_FACTOR) {
-            decim_index = 0;
-            firdecim_crcf_execute(decim, decim_input, &decim_output);
-            
-            // Feed to frame synchronizer
-            ofdmflexframesync_execute(fs, &decim_output, 1);
-            
-            if (frame_received) {
-                break; // Frame detected and received
-            }
+        if (frame_received) {
+            break; // Frame detected and received
         }
     }
     
@@ -328,7 +256,7 @@ int main(int argc, char *argv[])
         // Calculate theoretical data rate
         int data_subcarriers = 46; // Approximate for 64 subcarriers with pilots/nulls
         int mod_bps = 4; // QAM-16 = 4 bits per symbol
-        float symbol_rate = (SAMPLE_RATE_HZ / DECIMATE_INTERPOLATE_FACTOR) / 
+        float symbol_rate = SAMPLE_RATE_HZ / 
                            (float)(OFDM_M + CP_LEN + TAPER_LEN);
         float raw_rate_kbps = (symbol_rate * data_subcarriers * mod_bps) / 1e3;
         
@@ -356,8 +284,6 @@ int main(int argc, char *argv[])
     free(tx_buffer);
     ofdmflexframegen_destroy(fg);
     ofdmflexframesync_destroy(fs);
-    firinterp_crcf_destroy(interp);
-    firdecim_crcf_destroy(decim);
     
     printf("\n========================================\n");
     printf("Example completed successfully!\n");
