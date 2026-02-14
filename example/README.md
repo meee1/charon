@@ -60,7 +60,7 @@ This will build all example applications.
 
 **Configuration** (matching Charon):
 - Sample Rate: 1.4 MHz
-- Bandwidth: ~1.4 MHz
+- OFDM BW: ~1.4 MHz
 - Subcarriers: 64 (OFDM-64)
 - Modulation: QAM-16
 - FEC: SECDED7264 + HAMMING128

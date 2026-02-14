@@ -160,7 +160,7 @@ struct iio_context * pluto_init_txrx() {
     //TX Buffer
     if(!pluto_tx_initialized) {
 
-      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)/4, false); //0==auto 
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)/4, false); //fractional symbol DMA buffer
 
       if (!txbuf) {
           perror("Could not create TX buffer");
