@@ -21,13 +21,13 @@ make
 ```bash
 make host
 ```
-This produces `charon-host`, which replaces RF hardware with UDP sockets (ports 5001 RX, 5002 TX).
+This produces `charon-host`, which replaces RF hardware with UDP sockets (both TX and RX on port 5002 at `127.0.0.1`). See `HOST_MODE.md` for integration details.
 
 ### Build example programs
 ```bash
 cd example && make
 ```
-Builds `ofdm_loopback_example` (TX/RX loopback test) and `ofdm_file_transfer` (multi-frame simulation).
+Builds `ofdm_loopback_example` (TX/RX loopback test) and `ofdm_file_transfer` (multi-frame simulation). Note: examples use QAM-16 modulation for demonstration; production Charon uses QPSK (see `ofdm_conf.h`).
 
 ### Full firmware image
 ```bash
@@ -45,18 +45,20 @@ make -f Makefile.host clean  # Host build artifacts in .build_host/
 ## Project Structure
 
 ```
-charon.c          Main event loop, MAC layer (CSMA), ACK/retransmission state machine
+charon.c          Main event loop, MAC layer (CSMA/LBT), ACK/retransmission state machine
 pluto.c           PlutoSDR hardware interface via libiio/AD9361 (AGC, frequency, gain)
 pluto_host.c      Host-mode replacement: UDP sockets instead of hardware
 ofdm_tx.c         OFDM frame modulation using liquid-dsp ofdmflexframegen
 ofdm_rx.c         OFDM frame demodulation using liquid-dsp ofdmflexframesync
 tap_device.c      TAP network device (ofdm0) creation, bridge setup, frame wrapping
 tcp_subs.c        TCP MSS/window rewriting to prevent link overflow
-config.c          Runtime config via PlutoSDR u-boot environment (fw_printenv)
-util.c             Batman-adv route table parsing
+config.c          Runtime config via PlutoSDR u-boot environment (fw_printenv), and
+                  network bridge setup (batman-adv, TAP, mesh-bridge, taskset)
+util.c            Batman-adv route table parsing
 crc.c             CRC-32 calculations
 timers.c          Microsecond-resolution timers (gettimeofday-based)
-glibc_compat.c    glibc compatibility shims (strtol/strtoll wrapping)
+glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_strtoll,
+                  __isoc23_strtoul, and __isoc23_strtoull via linker --wrap flags
 
 ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 8x decimation)
 ofdm.h            liquid-dsp internal struct definitions
@@ -65,6 +67,15 @@ ethernet.h        Ethernet frame structures
 filters/pluto/    Pre-calculated FIR filter coefficients (131 KB)
 third_party/      Bundled libfec (FEC) and libtuntap (TAP device)
 example/          Host-mode loopback and file transfer examples
+  QUICKREF.md     Quick reference for example build and usage
+  PACKAGE.md      Packaging notes
+  test.sh         Automated test script
+  benchmark.sh    Throughput benchmark script
+
+build_pluto_image/              Helper scripts/configs for PlutoSDR firmware builds
+changes_to_plutosdr_fw_configs_rel_to_v28/  Diffs of config changes vs firmware v0.28
+buildroot_static_libs.patch     Patch enabling static library builds in buildroot
+deploy_callgrind.sh             Script to deploy and run Callgrind/Valgrind profiling on device
 ```
 
 ## Signal Flow
@@ -74,6 +85,17 @@ RX: AD9361 IQ samples -> pluto.c -> ofdm_rx.c (demodulate) -> tap_device.c -> Li
 TX: tap_device.c -> ofdm_tx.c (modulate) -> pluto.c -> AD9361 RF output
 MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame wrapping
 ```
+
+### MAC Layer Detail (`charon.c`)
+
+`main_loop()` implements CSMA with listen-before-talk:
+1. Call `pluto_receive()` continuously while channel is active (`OFDMFRAMESYNC_STATE_SEEKPLCP` not set)
+2. AGC is checked periodically (fast: 10 ms, slow: 1 s)
+3. After channel clears, check for pending retransmissions (exponential backoff with randomness)
+4. Read new frame from TAP device if no retry pending
+5. Transmit after `symbol_delay_timeout` has elapsed
+6. Set `tx_retry` to `max_short_retrans` (<128 B frames) or `max_long_retrans` (>=128 B)
+7. Broadcast frames get `bcast_retrans` transmissions with no ACK wait
 
 ## Architecture and Conventions
 
@@ -98,13 +120,14 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 - Do not manually edit `.h` files that carry this warning
 
 ### Build Targets
-- `Makefile` — ARM cross-compilation with Linaro GCC 7.3 (`arm-linux-gnueabihf-gcc`)
-  - Compiler flags: `-O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb`
+- `Makefile` — ARM cross-compilation with Linaro GCC (`arm-linux-gnueabihf-gcc`)
+  - Compiler flags: `-O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -D_TIME_BITS=32 -fno-builtin-strtol`
   - Output directory: `.build/`
   - Statically links: libliquid.a, libfftw3f.a, libfec, libtuntap
-  - Dynamically links: libc, libiio, libad9361, libusb-1.0, and others
+  - Dynamically links: libc, libiio, libad9361, libini, libusb-1.0, libserialport, libavahi-client, libavahi-common, libxml2, libz, libdbus-1
+  - Linker wraps `__isoc23_strtol`, `__isoc23_strtoll`, `__isoc23_strtoul`, `__isoc23_strtoull` via `glibc_compat.c`
 - `Makefile.host` — Native host build with system gcc
-  - Compiler flags: `-O0 -std=gnu99 -ggdb`
+  - Compiler flags: `-O0 -std=gnu99 -ggdb -D_FILE_OFFSET_BITS=64`
   - Output directory: `.build_host/`
   - Uses `pluto_host.c` instead of `pluto.c`
 
@@ -115,6 +138,21 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 - **libfec** — Forward error correction (Viterbi, Reed-Solomon)
 - **libtuntap** — TAP device creation
 - **batman-adv** — Kernel module for layer-2 mesh routing
+
+## OFDM Parameters (`ofdm_conf.h`)
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `OFDM_M` | 64 | Subcarrier count |
+| `CP_LEN` | 4 | Cyclic prefix length (samples) |
+| `TAPER_LEN` | 2 | Taper length (samples) |
+| `DECIMATE_INTERPOLATE_FACTOR` | 8 | Hardware-to-baseband sample rate ratio |
+| `OFDM_MODULATION` | `LIQUID_MODEM_QPSK` | Production modulation |
+| `OFDM_FEC0` | `LIQUID_FEC_NONE` | Inner FEC |
+| `OFDM_FEC1` | `LIQUID_FEC_SECDED7264` | Outer FEC |
+| `OFDM_CRC` | `LIQUID_CRC_32` | Frame CRC |
+| `PAYLOAD_LEN` | 1514 | Max frame payload (bytes) |
+| `RX_TIMEOUT` | 4096 | RX loop iterations before timeout |
 
 ## Critical Constraints (DO NOT)
 
@@ -128,44 +166,56 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 There is no traditional unit test suite. Testing is done through:
 
 1. **Example programs** (`example/` directory):
-   - `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF
+   - `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF (uses QAM-16)
    - `ofdm_file_transfer` — simulates multi-frame file transfer
    - Run: `cd example && make && ./ofdm_loopback_example`
+   - Automated tests: `cd example && ./test.sh`
 
 2. **Host mode** (`make host`):
    - Produces `charon-host` using UDP sockets instead of RF hardware
-   - Validates OFDM PHY + MAC layer in software
-   - See `HOST_MODE.md` for details
+   - TX sends interpolated IQ samples (int16_t pairs) to `127.0.0.1:5002`
+   - RX receives IQ samples (int16_t pairs) from `127.0.0.1:5002`
+   - TX destination is automatically learned from the first RX packet source address
+   - Can integrate with GNU Radio, SDR++, or custom Python UDP clients
+   - See `HOST_MODE.md` for details and integration examples
 
 3. **On-device testing** (via SSH):
    - `ssh root@192.168.2.1` (password: `analog`)
    - Restart: `/etc/init.d/S100-start_charon restart`
    - Performance: `iperf3 -c <remote_ip>` (iperf3 server auto-starts on PlutoSDR)
 
-4. **CI** (`.github/workflows/nomod.yml`):
+4. **Profiling** (`deploy_callgrind.sh`):
+   - Deploys and runs Callgrind/Valgrind on-device for performance analysis
+
+5. **CI** (`.github/workflows/nomod.yml`):
    - GitHub Actions on ubuntu-24.04
-   - Builds full cross-compiled binary and firmware image
-   - Triggered on push/PR to `master` and `dev` branches
+   - Applies `buildroot_static_libs.patch` to buildroot before building
+   - Builds cross-compiled binary, then full firmware image
+   - Uploads artifacts: `charon` binary, `out.txt` disassembly, and `plutosdr-fw/build/` firmware
+   - Triggered on push/PR to `master` and `dev` branches, and manual dispatch
 
 ## Runtime Configuration
 
-All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`):
+All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`). Unset variables fall back to compiled-in defaults:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `enable_charon` | 1 | Start daemon on boot |
+| `enable_charon` | 1 | Start daemon on boot; exits immediately if 0 |
 | `ref_correction_ppm` | 6.15 | Frequency correction (**most critical** — narrow OFDM needs <1 ppm) |
 | `freq_rxtx_hz` | 915000000 | Operating frequency (915 MHz ISM) |
 | `sample_freq_hz` | 11200000 | Hardware sample rate (fixed, do not change) |
-| `rf_bandwidth` | 250000 | RF filter bandwidth |
-| `tx_output_power_minus_dbm` | 10 | TX power (-10 dBm / 100 uW, FCC Part 15) |
+| `rf_bandwidth` | 1400000 | RF filter bandwidth (1.4 MHz) |
+| `tx_output_power_minus_dbm` | 10 | TX power stored as positive; negated in code (-10 dBm / 100 uW, FCC Part 15) |
 | `max_short_retrans` | 8 | Retries for <128 byte frames |
 | `max_long_retrans` | 1 | Retries for >=128 byte frames |
 | `bcast_retrans` | 1 | Broadcast frame retransmissions |
 | `bat_ogm_interval` | 10000 | Batman OGM interval (ms) |
 | `ack_delay_timeout` | 25000 | ACK wait timeout (usec) |
-| `symbol_delay_timeout` | 144 | TX delay after RX (usec) |
+| `symbol_delay_timeout` | `(OFDM_M+CP_LEN+TAPER_LEN)*(DECIMATE_INTERPOLATE_FACTOR/4)` ≈ 140 | TX delay after RX (usec) |
 | `max_tcp_segs` | 2 | TCP window size limit (segments) |
+| `usb_batman_if` | 0 | Whether USB interface participates in batman-adv (0 = standard bridge mode) |
+| `max_tcp_share_backoff` | `symbol_delay_timeout * 12` | Max backoff for TCP connection sharing |
+| `ipaddr` | (from usb0) | Override mesh-bridge IP address |
 
 Set defaults on-device with: `sh /root/set_charon_env.sh`
 
@@ -180,6 +230,9 @@ Host USB <-> usb0 <-> mesh-bridge <-> bat0 (batman-adv) <-> ofdm0 (TAP) <-> Char
 - `mesh-bridge`: Linux bridge joining bat0 and usb0
 - Charon ethernet frame type: `0x0420` with 4-byte PID for duplicate detection
 - ACK frames: 6-byte MAC address without payload
+- `usb_batman_if=0` (default): standard bridge — usb0 and bat0 bridged together
+- `usb_batman_if=1`: usb0 also added to batman-adv (non-batman clients see mesh via ARP, less OGM traffic, slower discovery)
+- `charon` is pinned to CPU core 1 via `taskset` at startup (requires `maxcpus=2` u-boot env)
 
 ## Performance Expectations
 
