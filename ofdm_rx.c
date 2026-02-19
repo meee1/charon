@@ -102,7 +102,7 @@ static int data_rate_kbps;
 void bump_nco() {
   static int nco_mod=0;
   if(nco_mod++%128==0) {
-    nco_crcf_set_frequency(ofdm_nco, (rand()/RAND_MAX)*1e-4  );  //spread some of the dc offset /flicker noise out
+    nco_crcf_set_frequency(ofdm_nco, ((float)rand()/(float)RAND_MAX)*1e-4  );  //spread some of the dc offset /flicker noise out
                                                                  // by +/- 140Hz
   }
 }
@@ -349,10 +349,6 @@ is_accept=0;
   //framesyncstats_print(&_stats);
   //ofdmflexframesync_print(fs);
 
-
-  if(total_good_frames%32==0) {
-    //fprintf(stderr, "\r\ntotal good/bad frames: %d / %d   %lld bytes, PER: %3.2f %, h_, p_: %d, %d, time: %lld, tput: %lld kbps, tput: %4.1f KBytes/sec, drate %lld kbps, rssi %3.1f dBm\n\0", total_good_frames, total_bad_frames, total_bytes, per, _header_valid, _payload_valid, time_secs, kbps, (float) kbps/8.0f, drate_bps, rssi_dbm );
-  }
 
 
 
