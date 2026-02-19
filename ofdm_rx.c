@@ -57,17 +57,6 @@ static ofdmflexframesync fs;
 int did_rx_ok;
 
 
-// options
-static unsigned int DM = DECIMATE_INTERPOLATE_FACTOR;         // decimation factor
-// generate input signal and decimate
-static float complex x[DECIMATE_INTERPOLATE_FACTOR];         // input samples
-static float complex y;            // output sample
-
-static float h[8192];             // filter coefficients
-static unsigned int h_len;
-static firdecim_crcf q;
-
-static int dec_mod;
 static long long time_start;
 static long long time_secs;
 static long long kbps;
@@ -389,12 +378,6 @@ void init_ofdm_rx(void) {
 
   ofdmflexframesync_print(fs);
 
-  h_len = estimate_req_filter_len( (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_RX_BW_FACTOR)), OFDM_RX_STOP_DB );
-  fprintf(stderr, "\nrx h_len: %d", h_len);
-
-  liquid_firdes_kaiser(h_len,  1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_RX_BW_FACTOR)  ,OFDM_RX_STOP_DB,0.0f,h);
-  q = firdecim_crcf_create(DM,h,h_len);
-
   ofdm_nco = nco_crcf_create(LIQUID_NCO);
   nco_crcf_set_frequency(ofdm_nco, 0); 
 }
@@ -402,13 +385,5 @@ void init_ofdm_rx(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_rx(float complex sample) {
-
-  x[dec_mod++] = sample;
-
-  if(dec_mod==DM) {
-    dec_mod=0;
-    firdecim_crcf_execute(q, x, &y);
-
-    ofdmflexframesync_execute(fs, &y, 1);
-  }
+  ofdmflexframesync_execute(fs, &sample, 1);
 }

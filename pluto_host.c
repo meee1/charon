@@ -60,18 +60,8 @@ static int pluto_rx_initialized=0;
 static int pluto_tx_initialized=0;
 static int tx_enabled=0;
 
-static unsigned int M=DECIMATE_INTERPOLATE_FACTOR;
-static unsigned int h_len;
-
-static float h[2048];
-static firinterp_crcf q;
-static firdecim_crcf q_rx;
-
-static float complex x;
-static float complex y[DECIMATE_INTERPOLATE_FACTOR];
 static int llen;
 static int ii=0;
-static int jj=0;
 
 static long long agc_gain = 72;
 static int agc_locked=0;
@@ -185,27 +175,8 @@ struct iio_context * pluto_init_txrx() {
 
     rx_addr_len = sizeof(rx_src_addr);
     
-    // Initialize TX filter
-    if(!pluto_tx_initialized) {
-        h_len = estimate_req_filter_len((1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)), OFDM_TX_STOP_DB);
-        fprintf(stderr, "\ntx h_len: %d", h_len);
-        
-        liquid_firdes_kaiser(h_len, (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)), OFDM_TX_STOP_DB, 0.0f, h);
-        q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR, h, h_len);
-        
-        pluto_tx_initialized = 1;
-    }
-    
-    // Initialize RX filter
-    if(!pluto_rx_initialized) {
-        h_len = estimate_req_filter_len((1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_RX_BW_FACTOR)), OFDM_RX_STOP_DB);
-        fprintf(stderr, "\nrx h_len: %d", h_len);
-        
-        liquid_firdes_kaiser(h_len, (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_RX_BW_FACTOR)), OFDM_RX_STOP_DB, 0.0f, h);
-        q_rx = firdecim_crcf_create(DECIMATE_INTERPOLATE_FACTOR, h, h_len);
-        
-        pluto_rx_initialized = 1;
-    }
+    pluto_tx_initialized = 1;
+    pluto_rx_initialized = 1;
     
     pluto_current_gain = 50;
     current_sample_freq = sample_freq_hz;
@@ -339,21 +310,12 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 
     llen = len;
 
-    // Calculate total output samples after interpolation
-    int total_samples = llen * DECIMATE_INTERPOLATE_FACTOR;
-    static int16_t tx_buffer[16384]; // Large enough buffer for interpolated samples (2 int16 per sample)
+    static int16_t tx_buffer[16384];
     int buf_idx = 0;
 
-    // Interpolate all samples and collect into buffer
     for(ii=0; ii<llen; ii++) {
-        x = buffer[ii];
-
-        firinterp_crcf_execute(q, x, y);  // interpolate
-
-        for(jj=0; jj<DECIMATE_INTERPOLATE_FACTOR; jj++) {
-            tx_buffer[buf_idx++] = (int16_t)(creal(y[jj]) * 8192.0);
-            tx_buffer[buf_idx++] = (int16_t)(cimag(y[jj]) * 8192.0);
-        }
+        tx_buffer[buf_idx++] = (int16_t)(creal(buffer[ii]) * 8192.0);
+        tx_buffer[buf_idx++] = (int16_t)(cimag(buffer[ii]) * 8192.0);
     }
 
     // Send all interpolated data in one UDP packet

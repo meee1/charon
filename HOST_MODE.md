@@ -14,10 +14,12 @@ This creates the `charon-host` binary for x86-64/ARM64 host systems.
 
 The host build uses `pluto_host.c` instead of `pluto.c`, replacing libiio/AD9361 hardware calls with UDP sockets:
 
-- **TX Socket**: Port 5001 - Sends interpolated IQ samples (int16_t pairs) via UDP
-- **RX Socket**: Port 5002 - Receives IQ samples (int16_t pairs) for demodulation via UDP
+- **TX Socket**: Port 5002 - Sends OFDM baseband IQ samples (int16_t pairs) via UDP
+- **RX Socket**: Port 5002 - Receives OFDM baseband IQ samples (int16_t pairs) for demodulation via UDP
 
 Both sockets operate in non-blocking mode. The TX destination is automatically learned from the first RX packet source address.
+
+Samples are at the OFDM baseband rate (equivalent to 1.4 MHz) — there is no software FIR interpolation/decimation stage. External sources should send samples at the OFDM baseband rate directly.
 
 ## Usage
 
@@ -36,22 +38,22 @@ The system automatically learns the TX destination from the first packet receive
 
 ### Transmit Path
 ```
-TAP device → OFDM modulator → FIR interpolation (8x) → UDP port 5001
+TAP device → OFDM modulator → UDP port 5002
 ```
 
-### Receive Path  
+### Receive Path
 ```
-UDP port 5002 → FIR decimation (8x) → OFDM demodulator → TAP device
+UDP port 5002 → OFDM demodulator → TAP device
 ```
 
 ## Integration with SDR Hardware
 
-You can connect this to GNU Radio, SDR++, or custom applications:
+You can connect this to GNU Radio, SDR++, or custom applications. Since there is no longer a software FIR stage, the external source/sink operates at the OFDM baseband rate (1.4 MHz equivalent). An external SDR application must handle any interpolation/decimation needed for its hardware sample rate.
 
 ### Example GNU Radio Flowgraph
 ```
-UDP Source (port 5001) → Complex to Float → PlutoSDR Sink
-PlutoSDR Source → Float to Complex → UDP Sink (localhost:5002)
+UDP Source (port 5002) → Complex to Float → Interpolate (8x) → PlutoSDR Sink (11.2 MSPS)
+PlutoSDR Source (11.2 MSPS) → Decimate (8x) → Float to Complex → UDP Sink (localhost:5002)
 ```
 
 ### Example Python UDP Client
