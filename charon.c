@@ -187,7 +187,7 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
 
  
  if(is_broadcast==0x00) {
-   is_route = is_batman_route(bat_route, dst_ofdm0_mac);
+   if(!is_retrans) is_route = is_batman_route(bat_route, dst_ofdm0_mac);
 
    fprintf(stderr, " lookup dst_mac,  %02x:%02x:%02x:%02x:%02x:%02x", 
       dst_ofdm0_mac[0],

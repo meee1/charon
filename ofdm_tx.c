@@ -49,8 +49,6 @@ static unsigned char ofdm_p[OFDM_M];                 // subcarrier allocation (n
 static int ofdm_last_symbol;
 static int ofdm_index=0;
 
-static int i;
-
 static ofdmflexframegen ofdm_fg;
 
 static timer_obj *timer1;
@@ -162,9 +160,7 @@ int do_ofdm_tx( uint8_t *buffer, int len, int is_retrans, int do_dump_rx, int is
 
   //fill the rest of ofdm_payload with the buffer skipping past charon offset bytes
   //note that len==0 for ACKS, so we use tlen to tx
-    for(i=0;i<len;i++) {
-     ofdm_payload[charon_added_length+i] = buffer[i];
-    }
+    memcpy(&ofdm_payload[charon_added_length], buffer, len);
 
 do_send:
   timer_reset(timer1);

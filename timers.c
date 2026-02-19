@@ -59,7 +59,6 @@ timer_obj * create_timer(void) {
 /////////////////////////////////////////////////////////////
 void timer_reset(timer_obj *o) {
   gettimeofday(&o->start, NULL);
-  gettimeofday(&o->end, NULL);
 }
 
 
