@@ -70,3 +70,18 @@ long long timer_elapsed_usec(timer_obj *o) {
   return (now.tv_sec - o->start.tv_sec) * 1000000LL
        + (now.tv_nsec - o->start.tv_nsec) / 1000;
 }
+
+//////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
+long long timer_now_usec(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return now.tv_sec * 1000000LL + now.tv_nsec / 1000;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
+long long timer_elapsed_since(timer_obj *o, long long now_usec) {
+  long long start_usec = o->start.tv_sec * 1000000LL + o->start.tv_nsec / 1000;
+  return now_usec - start_usec;
+}
