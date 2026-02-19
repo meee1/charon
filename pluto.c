@@ -59,6 +59,12 @@ static struct iio_device *rx_dev;
 static struct iio_channel *tx0_i, *tx0_q;
 static struct iio_channel *rx0_i, *rx0_q;
 
+// cached phy channel pointers (avoid repeated iio_device_find_channel lookups)
+static struct iio_channel *phy_voltage0_in;   // phy "voltage0" input (RX)
+static struct iio_channel *phy_voltage0_out;  // phy "voltage0" output (TX)
+static struct iio_channel *phy_altvoltage0;   // phy "altvoltage0" output (RX LO)
+static struct iio_channel *phy_altvoltage1;   // phy "altvoltage1" output (TX LO)
+
 static struct iio_buffer *rxbuf;
 static void *p_dat, *p_end, *p_start;
 static ptrdiff_t p_inc;
@@ -109,6 +115,12 @@ struct iio_context * pluto_init_txrx() {
 
     phy = iio_context_find_device(ctx, "ad9361-phy");
 
+    // cache phy channel pointers once at init
+    phy_voltage0_in  = iio_device_find_channel(phy, "voltage0", false);
+    phy_voltage0_out = iio_device_find_channel(phy, "voltage0", true);
+    phy_altvoltage0  = iio_device_find_channel(phy, "altvoltage0", true);
+    phy_altvoltage1  = iio_device_find_channel(phy, "altvoltage1", true);
+
     tx_dev = iio_context_find_device(ctx, "cf-ad9361-dds-core-lpc");
     rx_dev = iio_context_find_device(ctx, "cf-ad9361-lpc");
 
@@ -131,14 +143,14 @@ struct iio_context * pluto_init_txrx() {
     pluto_set_out_gain( -80 );
 
     iio_channel_attr_write(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "gain_control_mode",
-        "fast_attack"); 
+        "fast_attack");
 
     iio_channel_attr_write_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "hardwaregain",
-        73); 
+        73);
 
 
     //RX Buffer
@@ -202,8 +214,8 @@ long long pluto_get_in_gain(void) {
   long long gain_val=72;
 
     iio_channel_attr_read_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
-      "hardwaregain", 
+        phy_voltage0_in,
+      "hardwaregain",
       &gain_val);
 
   //fprintf(stderr, "\ngain: %lld", gain_val);
@@ -215,9 +227,9 @@ long long pluto_get_in_gain(void) {
 void pluto_set_in_gain_auto_fast(void) {
 
     iio_channel_attr_write(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "gain_control_mode",
-        "fast_attack"); 
+        "fast_attack");
 
 }
 
@@ -225,11 +237,11 @@ void pluto_set_in_gain_auto_fast(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 long long pluto_get_in_rssi(void) {
 
-  rssi=-110; 
+  rssi=-110;
 
     iio_channel_attr_read_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
-      "rssi", 
+        phy_voltage0_in,
+      "rssi",
       &rssi);
 
   //fprintf(stderr, "\nin_rssi: %lld", -rssi);
@@ -241,9 +253,9 @@ long long pluto_get_in_rssi(void) {
 void enable_rx() {
 
   iio_channel_attr_write_longlong(
-      iio_device_find_channel(phy, "altvoltage0", true),
+      phy_altvoltage0,
       "frequency",
-      current_rx_freq); 
+      current_rx_freq);
 }
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -253,9 +265,9 @@ void disable_rx() {
   prev_gain = pluto_get_in_gain();
 
   iio_channel_attr_write_longlong(
-      iio_device_find_channel(phy, "altvoltage0", true),
+      phy_altvoltage0,
       "frequency",
-      current_rx_freq+1000000 ); 
+      current_rx_freq+1000000 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -276,14 +288,14 @@ void pluto_set_in_gain(long long gain) {
     if(gain>73) gain = 73;
 
     iio_channel_attr_write(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "gain_control_mode",
-        "manual"); 
+        "manual");
 
     iio_channel_attr_write_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "hardwaregain",
-        gain); 
+        gain);
 
 }
 
@@ -293,9 +305,9 @@ void pluto_set_in_gain(long long gain) {
 void pluto_set_out_bw(long long chbw) {
 
     iio_channel_attr_write_longlong(
-        iio_device_find_channel(phy, "voltage0", true),
+        phy_voltage0_out,
         "rf_bandwidth",
-        chbw); 
+        chbw);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -303,9 +315,9 @@ void pluto_set_out_bw(long long chbw) {
 void pluto_set_in_bw(long long chbw) {
 
     iio_channel_attr_write_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "rf_bandwidth",
-        chbw); 
+        chbw);
 
     pluto_set_out_bw( chbw );
 }
@@ -314,9 +326,9 @@ void pluto_set_in_bw(long long chbw) {
 void pluto_set_in_sample_freq(long long sfreq) {
 
     iio_channel_attr_write_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "sampling_frequency",
-        sfreq); 
+        sfreq);
 
     ad9361_set_bb_rate_custom_filter_auto	(phy, sfreq);
 
@@ -328,7 +340,7 @@ void pluto_set_in_sample_freq(long long sfreq) {
 void pluto_set_out_gain(long long gain) {
 
   iio_channel_attr_write_longlong(
-      iio_device_find_channel(phy, "voltage0", true),
+      phy_voltage0_out,
       "hardwaregain",
       gain);
   //fprintf(stderr, "\nsetting tx gain %lld", gain);
@@ -342,7 +354,7 @@ void pluto_set_tx_freq(long long freq_tx_hz) {
   //NOTE: offset correction is done in set_rx_freq!!!!
 
   iio_channel_attr_write_longlong(
-      iio_device_find_channel(phy, "altvoltage1", true),
+      phy_altvoltage1,
       "frequency",
       (long long)freq_tx_hz);   //tx lo freq
 
@@ -377,15 +389,15 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
   current_rx_freq = (long long)freq_rx_hz + offset_hz;   //rx lo freq
 
   iio_channel_attr_read_longlong(
-        iio_device_find_channel(phy, "voltage0", false),
+        phy_voltage0_in,
         "sampling_frequency",
-        &current_sample_freq); 
+        &current_sample_freq);
 
 
   iio_channel_attr_write_longlong(
-      iio_device_find_channel(phy, "altvoltage0", true),
+      phy_altvoltage0,
       "frequency",
-      current_rx_freq ); 
+      current_rx_freq );
 
   fprintf(stderr, "\nsetting rx_freq %lld", current_rx_freq); 
   fprintf(stderr, "\nsetting tx_freq %lld", current_rx_freq);
