@@ -157,13 +157,12 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
 
  int i;
  int nbytes;
- char _buffer[2342];
  int new_len;
 
  eth_frame *ethframe = (eth_frame *) buffer;
 
-  batman_frame_unicast *batucast = (batman_frame_unicast *) buffer; 
-  batman_frame_special *batspecial = (batman_frame_special *) buffer; 
+  batman_frame_unicast *batucast = (batman_frame_unicast *) buffer;
+  batman_frame_special *batspecial = (batman_frame_special *) buffer;
   batman_unicast *bathdr_u = &(batucast->bathdr_unicast);
 
  eth_hdr *ethhdr = (eth_hdr *) &(ethframe->ethhdr);
@@ -172,11 +171,9 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
  udp_hdr *udp = (udp_hdr *) &(ethframe->ip_proto_payload);
  uint8_t *payload = (uint8_t *) tcp->payload;
 
- nbytes = read(dev->tun_fd, _buffer, 2342);//is this source of memory leak, try copy
+ nbytes = read(dev->tun_fd, buffer, max_len);
 
  if(nbytes<=0) return 0;
-
- memcpy(buffer,_buffer,nbytes);
 
   memcpy(dst_mac, mac_all_zero, 6);
     
