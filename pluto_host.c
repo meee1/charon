@@ -357,10 +357,8 @@ int pluto_receive() {
     }
 
     int samples_read = bytes_read / sizeof(int16_t) / 2;  // I/Q pairs
-    
-    for (int i = 0; i < samples_read; i++) {
-        do_process_iq16(rx_buffer[i*2], rx_buffer[i*2 + 1]);
-    }
+
+    do_process_iq16_batch(rx_buffer, samples_read);
     
     return 0;
 }

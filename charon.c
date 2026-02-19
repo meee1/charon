@@ -51,6 +51,10 @@
 #include "util.h"
 #include "config.h"
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 
 
 static int max_retrans;
@@ -362,12 +366,61 @@ void main_loop(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_process_iq16(const int16_t i, const int16_t q) {
 
-  IF = ((float) i)/32768.0f;
-  QF = ((float) q)/32768.0f;
+  IF = ((float) i) * (1.0f/32768.0f);
+  QF = ((float) q) * (1.0f/32768.0f);
   sample = (float complex) (IF + _Complex_I * QF);
 
   bump_nco();
   do_ofdm_mix_down(sample, &sample);
   do_ofdm_rx(sample);
 
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+#define IQ_BATCH_SIZE 256
+static float complex iq_batch[IQ_BATCH_SIZE];
+
+void do_process_iq16_batch(const int16_t *buf, int count) {
+
+  while(count > 0) {
+    int n = (count > IQ_BATCH_SIZE) ? IQ_BATCH_SIZE : count;
+    int j;
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    float32x4_t scale = vdupq_n_f32(1.0f/32768.0f);
+    for(j = 0; j + 3 < n; j += 4) {
+      int16x4_t vi = {buf[j*2], buf[(j+1)*2], buf[(j+2)*2], buf[(j+3)*2]};
+      int16x4_t vq = {buf[j*2+1], buf[(j+1)*2+1], buf[(j+2)*2+1], buf[(j+3)*2+1]};
+      float32x4_t fi = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vi)), scale);
+      float32x4_t fq = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vq)), scale);
+      float fi_arr[4], fq_arr[4];
+      vst1q_f32(fi_arr, fi);
+      vst1q_f32(fq_arr, fq);
+      iq_batch[j]   = fi_arr[0] + _Complex_I * fq_arr[0];
+      iq_batch[j+1] = fi_arr[1] + _Complex_I * fq_arr[1];
+      iq_batch[j+2] = fi_arr[2] + _Complex_I * fq_arr[2];
+      iq_batch[j+3] = fi_arr[3] + _Complex_I * fq_arr[3];
+    }
+    for(; j < n; j++) {
+      iq_batch[j] = ((float)buf[j*2]) * (1.0f/32768.0f)
+                   + _Complex_I * ((float)buf[j*2+1]) * (1.0f/32768.0f);
+    }
+#else
+    for(j = 0; j < n; j++) {
+      iq_batch[j] = ((float)buf[j*2]) * (1.0f/32768.0f)
+                   + _Complex_I * ((float)buf[j*2+1]) * (1.0f/32768.0f);
+    }
+#endif
+
+    for(j = 0; j < n; j++) {
+      sample = iq_batch[j];
+      bump_nco();
+      do_ofdm_mix_down(sample, &sample);
+      do_ofdm_rx(sample);
+    }
+
+    buf += n * 2;
+    count -= n;
+  }
 }
