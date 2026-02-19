@@ -143,7 +143,7 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| `OFDM_M` | 64 | Subcarrier count |
+| `OFDM_M` | 128 | Subcarrier count |
 | `CP_LEN` | 4 | Cyclic prefix length (samples) |
 | `TAPER_LEN` | 2 | Taper length (samples) |
 | `DECIMATE_INTERPOLATE_FACTOR` | 1 | Software oversampling ratio (hardware FIR handles decimation) |
@@ -211,7 +211,7 @@ All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-dev
 | `bcast_retrans` | 1 | Broadcast frame retransmissions |
 | `bat_ogm_interval` | 10000 | Batman OGM interval (ms) |
 | `ack_delay_timeout` | 25000 | ACK wait timeout (usec) |
-| `symbol_delay_timeout` | `(OFDM_M+CP_LEN+TAPER_LEN)*(DECIMATE_INTERPOLATE_FACTOR/4)` ≈ 140 | TX delay after RX (usec) |
+| `symbol_delay_timeout` | `(OFDM_M+CP_LEN+TAPER_LEN)*2` ≈ 268 | TX delay after RX (usec) |
 | `max_tcp_segs` | 2 | TCP window size limit (segments) |
 | `usb_batman_if` | 0 | Whether USB interface participates in batman-adv (0 = standard bridge mode) |
 | `max_tcp_share_backoff` | `symbol_delay_timeout * 12` | Max backoff for TCP connection sharing |
