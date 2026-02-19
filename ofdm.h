@@ -38,7 +38,7 @@
 #define FFT_EXECUTE          fftwf_execute
 #define FFT_DIR_FORWARD      FFTW_FORWARD
 #define FFT_DIR_BACKWARD     FFTW_BACKWARD
-#define FFT_METHOD           FFTW_ESTIMATE
+#define FFT_METHOD           FFTW_MEASURE
 
 
 struct ofdmframesync_s {
