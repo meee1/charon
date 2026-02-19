@@ -35,6 +35,7 @@
 #include <ifaddrs.h>
 
 #include "util.h"
+#include "timers.h"
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -126,7 +127,13 @@ if(fp!=NULL) pclose(fp);
 }
 ////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
-int is_batman_route(const char*org_dest_mac_a, uint8_t *dst_route){
+#define ROUTE_CACHE_TTL_USEC 2000000  // 2 seconds
+static uint8_t cached_route[6];
+static char    cached_mac[18];
+static int     cache_valid = 0;
+static timer_obj *route_cache_timer = NULL;
+
+static int do_batman_route_lookup(const char*org_dest_mac_a, uint8_t *dst_route){
 
 FILE * fp;
 char line[1024];
@@ -135,11 +142,9 @@ char *tok1;
 char *tok2;
 char *tok3;
 char *tok4;
-char *tok5;
-char *tok6;
 
   memset(line,0x00,sizeof(line));
-  if((fp = popen("batctl o","r")) != NULL){
+  if((fp = fopen("/sys/kernel/debug/batman_adv/bat0/originators","r")) != NULL){
 
     while(fgets(line,sizeof(line),fp)!=NULL){
       // skip header lines starting with '[' or "   Originator"
@@ -185,18 +190,86 @@ char *tok6;
         dst_route[4] = strtol(&tok4[12],NULL,16);
         dst_route[5] = strtol(&tok4[15],NULL,16);
 
-        pclose(fp);
+        fclose(fp);
         return 1;
       }
       memset(line,0x00,sizeof(line));
     }
     goto clean;
   } else {
-    perror("is_batman_route:popen:");
-    goto clean;
+    // fallback to popen if debugfs not available
+    if((fp = popen("batctl o","r")) != NULL){
+      while(fgets(line,sizeof(line),fp)!=NULL){
+        if(line[0]=='[' || strncmp(line, "   Originator", 13)==0) {
+          memset(line,0x00,sizeof(line));
+          continue;
+        }
+        if(line[0]==' ' && line[1]=='*' && line[2]==' ') {
+          ptr = &line[3];
+          tok1 = strtok(ptr, " ");
+          if(tok1==NULL) { pclose(fp); return 0; }
+          if( strncmp(org_dest_mac_a, tok1, strlen(org_dest_mac_a))!=0 ) {
+            memset(line,0x00,sizeof(line));
+            continue;
+          }
+          tok2 = strtok(NULL, " ");
+          if(tok2==NULL) { pclose(fp); return 0; }
+          tok3 = strtok(NULL, ")");
+          if(tok3==NULL) { pclose(fp); return 0; }
+          tok4 = strtok(NULL, " ");
+          if(tok4==NULL) { pclose(fp); return 0; }
+          if( strlen(tok4) < 17 ) { pclose(fp); return 0; }
+          fprintf(stderr, "\nnext hop-> %s", tok4);
+          tok4[2] = 0; tok4[5] = 0; tok4[8] = 0;
+          tok4[11] = 0; tok4[14] = 0;
+          dst_route[0] = strtol(&tok4[0],NULL,16);
+          dst_route[1] = strtol(&tok4[3],NULL,16);
+          dst_route[2] = strtol(&tok4[6],NULL,16);
+          dst_route[3] = strtol(&tok4[9],NULL,16);
+          dst_route[4] = strtol(&tok4[12],NULL,16);
+          dst_route[5] = strtol(&tok4[15],NULL,16);
+          pclose(fp);
+          return 1;
+        }
+        memset(line,0x00,sizeof(line));
+      }
+      pclose(fp);
+    } else {
+      perror("is_batman_route:fopen/popen:");
+    }
+    return 0;
   }
 
 clean:
-if(fp!=NULL) pclose(fp);
+if(fp!=NULL) fclose(fp);
   return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+int is_batman_route(const char*org_dest_mac_a, uint8_t *dst_route){
+
+  if(route_cache_timer == NULL) {
+    route_cache_timer = create_timer();
+    timer_reset(route_cache_timer);
+  }
+
+  if(cache_valid && strncmp(org_dest_mac_a, cached_mac, 17) == 0 &&
+     timer_elapsed_usec(route_cache_timer) < ROUTE_CACHE_TTL_USEC) {
+    memcpy(dst_route, cached_route, 6);
+    return 1;
+  }
+
+  int result = do_batman_route_lookup(org_dest_mac_a, dst_route);
+  if(result) {
+    strncpy(cached_mac, org_dest_mac_a, 17);
+    cached_mac[17] = '\0';
+    memcpy(cached_route, dst_route, 6);
+    cache_valid = 1;
+    timer_reset(route_cache_timer);
+  } else {
+    cache_valid = 0;
+  }
+
+  return result;
 }
