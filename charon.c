@@ -303,10 +303,14 @@ void main_loop(void) {
   //transmit
   if( ofdm_rx_state() == OFDMFRAMESYNC_STATE_SEEKPLCP) {
 
+    long long now_usec = timer_now_usec();
+    long long ack_elapsed = timer_elapsed_since(ack_timer, now_usec);
+    long long sym_elapsed = timer_elapsed_since(symbol_timer, now_usec);
+
     //do retry tx
     if( tx_retry > 0 && got_ack==0) {
 
-        if( timer_elapsed_usec(ack_timer)>( ack_timeout ) && timer_elapsed_usec(symbol_timer) > symbol_delay_timeout) { 
+        if( ack_elapsed >( ack_timeout ) && sym_elapsed > symbol_delay_timeout) {
           ack_timeout = ack_delay_timeout;
           int backoff_exp = max_retrans - tx_retry;
           ack_timeout += (backoff_exp * backoff_exp) * (int) (symbol_delay_timeout+(random()%symbol_delay_timeout)); //exp backoff with randomness
@@ -335,7 +339,7 @@ void main_loop(void) {
 
     tcp_share_backoff=0; //don't do this for now
     //start a new tx?
-    if(n>0 && tx_retry==0 && timer_elapsed_usec(symbol_timer)>(symbol_delay_timeout+tcp_share_backoff) ) {  //leave some bw.  better sharing of multiple tcp connections 
+    if(n>0 && tx_retry==0 && sym_elapsed>(symbol_delay_timeout+tcp_share_backoff) ) {  //leave some bw.  better sharing of multiple tcp connections
 
       ack_timeout = ack_delay_timeout;
 
