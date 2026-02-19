@@ -461,20 +461,25 @@ int pluto_receive() {
     more_data=1;
   }
 
-  for ( ;p_dat < p_end; p_dat += p_inc) {
-
-    do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] ); //i and q
-
+  if(p_inc == 4 && n_rx > 0) {
+    // fast path: samples are contiguous int16 IQ pairs
+    int avail = (p_end - p_dat) / 4;
+    if(avail > n_rx) avail = n_rx;
+    do_process_iq16_batch((const int16_t*)p_dat, avail);
+    p_dat += avail * 4;
+    n_rx -= avail;
+    if(n_rx == 0) {
+      more_data = (p_dat != p_end) ? 1 : 0;
+    }
+  } else {
+    for ( ;p_dat < p_end; p_dat += p_inc) {
+      do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] );
       if(--n_rx==0) {
-        if(p_dat!=p_end) {
-          more_data=1;
-        }
-        else {
-          more_data=0;
-        }
-        return 0; 
+        more_data = (p_dat!=p_end) ? 1 : 0;
+        return 0;
       }
+    }
   }
 
-  return 0; 
+  return 0;
 }
