@@ -10,15 +10,19 @@ ARCH := $(shell uname -m)
 CROSS_COMPILE =
 SYSROOT =
 
+LIBTUNTAP_BUILD := ./third_party/libtuntap/build_host
+
 FLAGS ?= -O0 -std=gnu99 -ggdb \
         -I./third_party/libtuntap/\
+        -I$(LIBTUNTAP_BUILD)\
         -D_FILE_OFFSET_BITS=64
 
-# For host build, use system libraries
+# For host build, only link libraries actually used (pluto_host.c replaces
+# pluto.c so libiio/libad9361/libserialport/libavahi are not needed)
 LDFLAGS ?= -ggdb \
            -L ./third_party/libfec\
-           -L ./third_party/libtuntap\
-           -lm -lliquid -lfftw3f -lfftw3 -liio -lad9361 -lusb-1.0 -lserialport -lavahi-client -lavahi-common -lxml2 -lz -ldbus-1 \
+           -L $(LIBTUNTAP_BUILD)/lib\
+           -lm -lliquid -lfftw3f \
            -Wl,-Bstatic -lfec -ltuntap \
            -Wl,-Bdynamic
 
@@ -58,9 +62,11 @@ else ifeq "$(SUFFIX)" ".c"
 endif
 
 .SUFFIXES:
-.PHONY: clean
+.PHONY: all clean clean-deps deps host-test
 
-$(OUT): $(OBJ)
+all: $(OUT)
+
+$(OUT): $(OBJ) | deps
 ifeq "$(LIBRARY)" "static"
 	@$(AR) rcs $@ $^
 else
@@ -68,12 +74,29 @@ else
 	@$(COMPILER) $^ $(LDFLAGS) -o $@
 endif
 
-$(OUT_DIR)/%.o: %$(SUFFIX)
+$(OUT_DIR)/%.o: %$(SUFFIX) | deps
 	@mkdir -p $(dir $@)
 	@echo $(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@
 	@$(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@
 
+# Build third-party static libraries needed for host mode
+deps:
+	@echo "Building libfec..."
+	@cd third_party/libfec && ([ -f libfec.a ] || (chmod +x configure && ./configure && make))
+	@echo "Building libtuntap..."
+	@cmake -B $(LIBTUNTAP_BUILD) -DENABLE_CXX=OFF -DENABLE_PYTHON=OFF third_party/libtuntap > /dev/null 2>&1
+	@cmake --build $(LIBTUNTAP_BUILD) > /dev/null 2>&1
+	@echo "Dependencies ready."
+
 clean:
 	@$(RM) -r $(OUT) $(OUT_DIR)
+
+clean-deps:
+	@$(RM) -r $(LIBTUNTAP_BUILD)
+	@$(MAKE) -C third_party/libfec clean > /dev/null 2>&1 || true
+
+# Run the host-mode test suite (requires root for TAP device tests)
+host-test: all
+	@bash tests/test_host.sh
 
 -include: $(DEPS)

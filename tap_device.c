@@ -95,19 +95,21 @@ int init_tap_device(void) {
   srandom(time(NULL));
 
 	if (tuntap_set_hwaddr(dev, tap_mac_a) == -1) {
-		ret = 1;
-    fprintf(stderr, "\nerr: %s", tap_mac_a);
-		goto clean;
+    // Non-fatal: some kernels (e.g. 4.4.x) do not support SIOCSIFHWADDR on TAP
+    // interfaces. Log a warning and continue; the kernel assigns a MAC instead.
+    fprintf(stderr, "\nwarning: could not set TAP MAC %s (continuing with kernel-assigned MAC)", tap_mac_a);
 	}
 
 	if (tuntap_set_mtu(dev, 2342) == -1) {
-		ret = 1;
-		goto clean;
+    // Non-fatal: some kernels (e.g. 4.4.x in containers) block SIOCSIFMTU on
+    // TAP interfaces. Log a warning and continue with the default MTU.
+    fprintf(stderr, "\nwarning: could not set TAP MTU to 2342 (continuing with default MTU)");
 	}
 
 	if (tuntap_up(dev) == -1) {
-		ret = 1;
-		goto clean;
+    // Non-fatal: some kernels (e.g. 4.4.x in containers) block SIOCSIFFLAGS on
+    // TAP interfaces. The TUN fd is still usable for reads/writes.
+    fprintf(stderr, "\nwarning: could not bring TAP interface up (SIOCSIFFLAGS failed; continuing)");
 	}
 
   tap_mac_a[2] = 0;

@@ -7,10 +7,10 @@ srcdir = .
 prefix = /usr/local
 exec_prefix=${prefix}
 
-CC=$(CROSS_COMPILE)gcc
-AR=$(CROSS_COMPILE)ar
-RANLIB=$(CROSS_COMPILE)ranlib
-AS=$(CROSS_COMPILE)as
+CC=gcc
+AR=ar
+RANLIB=ranlib
+AS=as
 LIBS=cpu_mode_unknown.o fec.o viterbi27.o viterbi27_port.o viterbi29.o viterbi29_port.o \
 	viterbi39.o viterbi39_port.o \
 	viterbi615.o viterbi615_port.o encode_rs_char.o encode_rs_int.o encode_rs_8.o \
@@ -26,7 +26,7 @@ LDFLAGS=
 
 SHARED_LIB=libfec.so
 
-all: libfec.a
+all: libfec.a $(SHARED_LIB)
 
 test: vtest27 vtest29 vtest39 vtest615 rstest dtest sumsq_test peaktest
 	@echo "Correctness tests:"
@@ -48,7 +48,7 @@ install: all
 	mkdir -p ${exec_prefix}/lib 
 	install -m 644 -p $(SHARED_LIB) libfec.a ${exec_prefix}/lib
 #	(cd ${exec_prefix}/lib;ln -f -s $(SHARED_LIB) libfec.so)
-	
+	ldconfig
 	mkdir -p ${prefix}/include
 	install -m 644 -p fec.h ${prefix}/include
 	mkdir -m 0755 -p ${prefix}/share/man/man3
