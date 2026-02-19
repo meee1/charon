@@ -9,7 +9,7 @@ CROSS_COMPILE=arm-linux-gnueabihf-
 SYSROOT ?=  ./plutosdr-fw/buildroot/output/host/arm-buildroot-linux-gnueabihf/sysroot/
 
 
-FLAGS ?= -O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
+FLAGS ?= -O2 -flto -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -I$(SYSROOT)usr/include/\
          --sysroot=$(SYSROOT)\
         -I./third_party/libtuntap/\
         -D_TIME_BITS=32 -fno-builtin-strtol
@@ -18,7 +18,7 @@ FLAGS ?= -O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -I$(SY
 LIBLIQUID_STATIC = $(SYSROOT)usr/lib/libliquid.a
 LIBFFTW3F_STATIC = $(SYSROOT)usr/lib/libfftw3f.a
 
-LDFLAGS ?= -ggdb --sysroot=$(SYSROOT)\
+LDFLAGS ?= -flto -O2 -ggdb --sysroot=$(SYSROOT)\
            -L ./plutosdr-fw/buildroot/output/target/usr/lib\
            -L ./third_party/libfec\
            -L ./third_party/libtuntap\
