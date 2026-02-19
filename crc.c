@@ -75,8 +75,11 @@ void add_dup(uint32_t pid)
 int is_dup(uint32_t pid)
 {
   int i;
+  int idx = dup_idx;
   for(i=0; i<MAX_DUPES; i++) {
-    if(duplicates[i]==pid) return 1;
+    idx = (idx - 1) & (MAX_DUPES-1);
+    if(duplicates[idx]==pid) return 1;
+    if(duplicates[idx]==0) return 0;
   }
 
   return 0;
