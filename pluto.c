@@ -73,23 +73,9 @@ static int pluto_tx_initialized=0;
 
 static int tx_enabled=0;
 
-static unsigned int M=DECIMATE_INTERPOLATE_FACTOR;       // interpolation factor
-static unsigned int h_len;     // interpolation filter length
-
-    // design filter and create interpolator
-static float h[2048];         // filter coefficients
-static firinterp_crcf q;
-
-
-// generate input signal and interpolate
-static float complex x;        // input sample
-static float complex y[DECIMATE_INTERPOLATE_FACTOR];     // output samples
 static int nbytes_tx;
 static int llen;
-static int buf_index=0;
-static int tx_mod=0;
 static int ii=0;
-static int jj=0;
 static int n_rx;
 
 static long long prev_gain;
@@ -157,7 +143,7 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
-      rxbuf = iio_device_create_buffer(rx_dev, 11200, false); //32768 needed for high rate 12.5khz channel
+      rxbuf = iio_device_create_buffer(rx_dev, 1400, false);
 
 
       if (!rxbuf) {
@@ -176,14 +162,7 @@ struct iio_context * pluto_init_txrx() {
     //TX Buffer
     if(!pluto_tx_initialized) {
 
-      //h_len = OFDM_TX_HLEN; 
-      h_len = estimate_req_filter_len( (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)), OFDM_TX_STOP_DB );
-      fprintf(stderr, "\ntx h_len: %d", h_len);
-
-      liquid_firdes_kaiser(h_len,  (1.0/(DECIMATE_INTERPOLATE_FACTOR*2.0*OFDM_TX_BW_FACTOR)),  OFDM_TX_STOP_DB,0.0f,h);
-      q = firinterp_crcf_create(DECIMATE_INTERPOLATE_FACTOR,h,h_len);
-
-      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4, false); //0==auto 
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN), false); //0==auto
       //fprintf(stderr, "\npluto tx buffer size: %d , buffer: %d", ofdm_get_sample_count(PAYLOAD_LEN) , (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4 ); 
 
       if (!txbuf) {
@@ -437,23 +416,16 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 
     for(ii=0; ii<llen; ii++) {
 
-      x = buffer[ii];
+      ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( buffer[ii] )*8192.0));  //scale to work well for OFDM waveforms
+      ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( buffer[ii] )*8192.0));
 
-      firinterp_crcf_execute(q, x, y);  //interpolate
+      tx_p_dat += tx_p_inc;
 
-      for(jj=0; jj<DECIMATE_INTERPOLATE_FACTOR; jj++) {
-
-        ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( y[jj] )*8192.0));  //scale to work well for OFDM waveforms
-        ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( y[jj] )*8192.0));
-
-        tx_p_dat += tx_p_inc;
-
-        if(tx_p_dat == tx_p_end) {
-          iio_buffer_push(txbuf);
-          tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
-          tx_p_end = (char *) iio_buffer_end(txbuf);
-          more_tx_data=1;
-        }
+      if(tx_p_dat == tx_p_end) {
+        iio_buffer_push(txbuf);
+        tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
+        tx_p_end = (char *) iio_buffer_end(txbuf);
+        more_tx_data=1;
       }
 
     }

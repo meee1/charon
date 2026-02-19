@@ -146,7 +146,7 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 | `OFDM_M` | 64 | Subcarrier count |
 | `CP_LEN` | 4 | Cyclic prefix length (samples) |
 | `TAPER_LEN` | 2 | Taper length (samples) |
-| `DECIMATE_INTERPOLATE_FACTOR` | 8 | Hardware-to-baseband sample rate ratio |
+| `DECIMATE_INTERPOLATE_FACTOR` | 1 | Software oversampling ratio (hardware FIR handles decimation) |
 | `OFDM_MODULATION` | `LIQUID_MODEM_QPSK` | Production modulation |
 | `OFDM_FEC0` | `LIQUID_FEC_NONE` | Inner FEC |
 | `OFDM_FEC1` | `LIQUID_FEC_SECDED7264` | Outer FEC |
@@ -156,8 +156,7 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 ## Critical Constraints (DO NOT)
 
-- **Do not modify OFDM parameters** in `ofdm_conf.h` without regenerating FIR filters in `filters/pluto/pluto_filters.h`. The filter coefficients are tightly coupled to the 8x decimation factor and 64-subcarrier configuration.
-- **Do not change `sample_freq_hz`** — it is fixed at 11.2 MHz hardware / 1.4 MHz decimated.
+- **Do not change `sample_freq_hz`** — it is fixed at 1.4 MHz. The AD9361 hardware filter chain (`ad9361_set_bb_rate_custom_filter_auto`) is configured for this rate; there is no longer a software FIR stage.
 - **Do not remove `maxcpus`** u-boot setting — it enables the second CPU core needed for real-time sample processing.
 - **Do not set `enable_charon=0`** unless intentionally disabling mesh mode.
 
@@ -173,10 +172,11 @@ There is no traditional unit test suite. Testing is done through:
 
 2. **Host mode** (`make host`):
    - Produces `charon-host` using UDP sockets instead of RF hardware
-   - TX sends interpolated IQ samples (int16_t pairs) to `127.0.0.1:5002`
-   - RX receives IQ samples (int16_t pairs) from `127.0.0.1:5002`
+   - TX sends OFDM baseband IQ samples (int16_t pairs) to `127.0.0.1:5002`
+   - RX receives OFDM baseband IQ samples (int16_t pairs) from `127.0.0.1:5002`
+   - No software FIR stage — samples are at the OFDM baseband rate (1.4 MHz equivalent)
+   - External GNU Radio / SDR++ integrations must provide their own interpolation/decimation to match hardware sample rates
    - TX destination is automatically learned from the first RX packet source address
-   - Can integrate with GNU Radio, SDR++, or custom Python UDP clients
    - See `HOST_MODE.md` for details and integration examples
 
 3. **On-device testing** (via SSH):
@@ -203,7 +203,7 @@ All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-dev
 | `enable_charon` | 1 | Start daemon on boot; exits immediately if 0 |
 | `ref_correction_ppm` | 6.15 | Frequency correction (**most critical** — narrow OFDM needs <1 ppm) |
 | `freq_rxtx_hz` | 915000000 | Operating frequency (915 MHz ISM) |
-| `sample_freq_hz` | 11200000 | Hardware sample rate (fixed, do not change) |
+| `sample_freq_hz` | 1400000 | Hardware sample rate delivered to software (AD9361 decimates internally; fixed, do not change) |
 | `rf_bandwidth` | 1400000 | RF filter bandwidth (1.4 MHz) |
 | `tx_output_power_minus_dbm` | 10 | TX power stored as positive; negated in code (-10 dBm / 100 uW, FCC Part 15) |
 | `max_short_retrans` | 8 | Retries for <128 byte frames |
