@@ -304,7 +304,8 @@ void main_loop(void) {
 
         if( timer_elapsed_usec(ack_timer)>( ack_timeout ) && timer_elapsed_usec(symbol_timer) > symbol_delay_timeout) { 
           ack_timeout = ack_delay_timeout;
-          ack_timeout += (int) pow( (max_retrans-tx_retry), 2) * (int) (symbol_delay_timeout+(random()%symbol_delay_timeout)); //exp backoff with randomness
+          int backoff_exp = max_retrans - tx_retry;
+          ack_timeout += (backoff_exp * backoff_exp) * (int) (symbol_delay_timeout+(random()%symbol_delay_timeout)); //exp backoff with randomness
 
           do_tx(tap_buffer, n, 1, dst_mac, is_broadcast, current_pid);
 
