@@ -58,14 +58,15 @@ timer_obj * create_timer(void) {
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 void timer_reset(timer_obj *o) {
-  gettimeofday(&o->start, NULL);
+  clock_gettime(CLOCK_MONOTONIC, &o->start);
 }
 
 
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
 long long timer_elapsed_usec(timer_obj *o) {
-  gettimeofday(&o->end, NULL);
-  return (o->end.tv_sec*1e6+o->end.tv_usec) - (o->start.tv_sec*1e6+o->start.tv_usec);
-
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (now.tv_sec - o->start.tv_sec) * 1000000LL
+       + (now.tv_nsec - o->start.tv_nsec) / 1000;
 }
