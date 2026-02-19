@@ -1,10 +1,9 @@
-/* This file was automatically generated.  Do not edit! */
+/* This file was automatically generated.  Do not edit! */
 #include <time.h>
 #include <unistd.h>
 #include <sys/time.h>
 typedef struct timer_obj {
-  struct timeval start;
-  struct timeval end;
+  struct timespec start;
 } timer_obj;
 long long timer_elapsed_usec(timer_obj *o);
 void timer_reset(timer_obj *o);
