@@ -20,17 +20,13 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 #include "timers.h"
-//
+
 #include <iio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <sys/time.h>
-#include <math.h>
 #include <complex.h>
 #include "liquid/liquid.h"
 
@@ -64,9 +60,6 @@ static float per;
 static long long rx_gain;
 static float rssi_dbm;
 
-#define MAX_CONSTELLATION_POINTS 1024
-static float complex frame_sym_samples[MAX_CONSTELLATION_POINTS];
-
 static struct timeval start;
 static struct timeval end;
 static long long kbit_bytes;
@@ -93,7 +86,6 @@ static uint8_t rec_ack[6];
 static int is_broadcast = 0;
 static int is_ack=0;
 static int is_accept=0;
-static int i;
 
 static int data_rate_kbps;
 
@@ -212,22 +204,15 @@ is_accept=0;
         is_accept=1;
         if( memcmp( &(ethhdr_charon->dst_mac), mac_all_one, 6) == 0 ) is_broadcast=1;
 
-       // fprintf(stderr, "\nRF_IN is charon type, bc:%d, ", is_broadcast);
 
         if( memcmp( &(ethhdr_charon->src_mac), ofdm0_mac, 6) == 0 ) {
           fprintf(stderr,"\nRF_IN-> dropped (srcmac==ofdm0_mac)");
-          //we sent this, so just drop it.
           return 0;
         }
 
-
         if( !is_broadcast && memcmp( &(ethhdr_charon->dst_mac), ofdm0_mac, 6) != 0 ) {
-          //this is not our tap mac, so drop it.
           fprintf(stderr,"\nRF_IN-> not-acking. drop (dstmac!=ofdm0_mac)");
-          //for(i=0;i<32;i++) {
-           // fprintf(stderr, "%02x,", _payload[i] );
-          //}
-          if(tcp_share_backoff<max_tcp_share_backoff) tcp_share_backoff += symbol_delay_timeout; 
+          if(tcp_share_backoff<max_tcp_share_backoff) tcp_share_backoff += symbol_delay_timeout;
           return 0;
         }
 
@@ -235,10 +220,6 @@ is_accept=0;
 
       }
       else {
-        //fprintf(stderr, "\nRF_IN not charon, len=%d , type: %04x, first 32->  ", _payload_len, htons(ethhdr_charon->eth_type));
-        //for(i=0;i<32;i++) {
-         // fprintf(stderr, "%02x,", _payload[i] );
-        //}
         return 0;
       }
     }
@@ -351,15 +332,6 @@ is_accept=0;
       drate = 0;
     }
 
-
-    //only send constellation if it was a validated frame
-    //memset(frame_sym_samples,0x00,sizeof(frame_sym_samples));
-    //int i;
-    //for(i=0;i<MAX_CONSTELLATION_POINTS;i++) {
-      //frame_sym_samples[i] = _stats.framesyms[i];
-      //fprintf(stderr, "\n%f,%f", creal(frame_sym_samples[i]), cimag(frame_sym_samples[i]) );
-    //}
-
   }
   else {
     nco_crcf_set_frequency(_qq->nco_rx, last_good_nco_freq);
@@ -374,22 +346,7 @@ is_accept=0;
 
   if(total_good_frames>0) per = (float) ( (float) total_bad_frames / (float) (total_good_frames+total_bad_frames)) * 100.0f;
 
-  //framesyncstats_print(&_stats);
-  //ofdmflexframesync_print(fs);
-
-
-
-
-
-    //fprintf(stderr,"    EVM                 :   %12.8f dB\n", _stats->evm);
-    //fprintf(stderr,"    rssi                :   %12.8f dB\n", _stats->rssi);
-    //fprintf(stderr,"    carrier offset      :   %12.8f Fs\n", _stats->cfo);
-    //fprintf(stderr,"    num symbols         :   %u\n", _stats->num_framesyms);
-    //fprintf(stderr,"    validity check      :   %s\n", crc_scheme_str[_stats->check][0]);
-    //fprintf(stderr,"    fec (inner)         :   %s\n", fec_scheme_str[_stats->fec0][0]);
-    //fprintf(stderr,"    fec (outer)         :   %s\n", fec_scheme_str[_stats->fec1][0]);
-
-  return 0; 
+  return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////

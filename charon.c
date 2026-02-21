@@ -24,19 +24,16 @@
 #include "timers.h"
 
 #include <iio.h>
-#include <ctype.h>
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <complex.h>
-#include <math.h>
 
 #include <unistd.h>
-#include <arpa/inet.h>
 
 #include <getopt.h>
-  
+
 #include "liquid/liquid.h"
 
 #include "pluto.h"
@@ -61,14 +58,9 @@ static int do_loopback_test = 0;
 
 static int max_retrans;
 
-//opts
 static float IF;
 static float QF;
 static float complex sample;
-static int ii=0;
-
-static int first_tx=0;
-static int i;
 
 static uint8_t tap_buffer[2342];
 static int n;
@@ -82,10 +74,6 @@ static timer_obj *agc_timer_slow;
 static int got_ack;
 static long long ack_timeout;
 
-static long long cur_time;
-static long long ptime;
-
-static int ack_to_scale;
 static uint8_t is_broadcast;
 static uint8_t dst_mac[6];
 
@@ -191,14 +179,12 @@ int main (int argc, char **argv) {
   init_ofdm_rx();
   init_ofdm_tx();
 
-
   pluto_set_in_sample_freq( sample_freq_hz );
   pluto_set_in_bw( rf_bandwidth );
   pluto_set_out_bw( rf_bandwidth );
 
   pluto_set_rx_freq( freq_rxtx_hz );  //tx freq also set here
   pluto_set_out_gain( -80 );
-
 
   ack_timer = create_timer();
   timer_reset(ack_timer);
@@ -210,8 +196,6 @@ int main (int argc, char **argv) {
   timer_reset(agc_timer_fast);
   agc_timer_slow = create_timer();
   timer_reset(agc_timer_slow);
-
-
 
   main_loop();
   fprintf(stderr, "\n enter while main_loop");
@@ -260,7 +244,7 @@ void do_send_ack(uint8_t *ack_mac) {
 void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is_broadcast, uint32_t pid) {
 
 
- sprintf(bat_route, "%02x:%02x:%02x:%02x:%02x:%02x\0", 
+ sprintf(bat_route, "%02x:%02x:%02x:%02x:%02x:%02x",
     dst_mac[0],
     dst_mac[1],
     dst_mac[2],
@@ -332,7 +316,7 @@ void check_agc(void) {
 
     if( rssi > -30 && in_gain > 16) {
       pluto_bump_agc_down(-4);
-      fprintf(stderr, "\ncurrent RSSI: %d, in_gain %lld", rssi, in_gain); 
+      fprintf(stderr, "\ncurrent RSSI: %lld, in_gain %lld", rssi, in_gain);
     }
 
     timer_reset(agc_timer_fast);
@@ -344,7 +328,7 @@ void check_agc(void) {
     in_gain = pluto_get_in_gain();
 
     if( in_gain < 73) {
-      fprintf(stderr, "\ncurrent RSSI: %d, in_gain %lld", rssi, in_gain); 
+      fprintf(stderr, "\ncurrent RSSI: %lld, in_gain %lld", rssi, in_gain);
       pluto_set_in_gain(73);
       pluto_set_in_gain_auto_fast();
 
