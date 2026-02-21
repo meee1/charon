@@ -57,6 +57,8 @@
 
 
 
+static int do_loopback_test = 0;
+
 static int max_retrans;
 
 //opts
@@ -100,7 +102,131 @@ int first_rx_after_agc_reset;
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+static int loopback_rx_ok = 0;
+static unsigned char loopback_rx_payload[PAYLOAD_LEN];
+static int loopback_rx_payload_len = 0;
+
+static int loopback_rx_callback(unsigned char *_header,
+    int              _header_valid,
+    unsigned char *  _payload,
+    unsigned int     _payload_len,
+    int              _payload_valid,
+    framesyncstats_s _stats,
+    void *           _userdata)
+{
+  if (_header_valid && _payload_valid) {
+    loopback_rx_ok = 1;
+    if (_payload_len <= PAYLOAD_LEN) {
+      memcpy(loopback_rx_payload, _payload, _payload_len);
+      loopback_rx_payload_len = _payload_len;
+    }
+    fprintf(stderr, "  RSSI: %.2f dB, EVM: %.2f dB\n", _stats.rssi, _stats.evm);
+  } else {
+    fprintf(stderr, "  header_valid=%d, payload_valid=%d\n", _header_valid, _payload_valid);
+  }
+  return 0;
+}
+
+int run_loopback_test(void) {
+  int t, j;
+  int test_sizes[] = {1, 64, 256, 512, 1024, PAYLOAD_LEN};
+  int num_tests = sizeof(test_sizes) / sizeof(test_sizes[0]);
+  int pass_count = 0;
+  unsigned char p[OFDM_M];
+  unsigned char header[8] = {0};
+  unsigned char tx_payload[PAYLOAD_LEN];
+  float complex symbol_buffer[OFDM_M + CP_LEN];
+  int last_symbol;
+  int errors;
+  int payload_len;
+
+  fprintf(stderr, "Charon OFDM internal loopback test\n");
+  fprintf(stderr, "==================================\n");
+  fprintf(stderr, "Subcarriers: %d, Modulation: QPSK, CRC: CRC-32\n", OFDM_M);
+  fprintf(stderr, "FEC inner: NONE, FEC outer: SECDED7264\n");
+  fprintf(stderr, "Cyclic prefix: %d, Taper: %d\n\n", CP_LEN, TAPER_LEN);
+
+  ofdmframe_init_default_sctype(OFDM_M, p);
+
+  ofdmflexframegenprops_s fgprops;
+  ofdmflexframegenprops_init_default(&fgprops);
+  fgprops.check      = OFDM_CRC;
+  fgprops.fec0       = OFDM_FEC0;
+  fgprops.fec1       = OFDM_FEC1;
+  fgprops.mod_scheme = OFDM_MODULATION;
+
+  ofdmflexframegen fg = ofdmflexframegen_create(OFDM_M, CP_LEN, TAPER_LEN, p, &fgprops);
+  ofdmflexframesync fs = ofdmflexframesync_create(OFDM_M, CP_LEN, TAPER_LEN, p, loopback_rx_callback, NULL);
+
+  for (t = 0; t < num_tests; t++) {
+    payload_len = test_sizes[t];
+
+    for (j = 0; j < payload_len; j++) {
+      tx_payload[j] = (unsigned char)(j & 0xFF);
+    }
+
+    fprintf(stderr, "Test %d/%d: payload_len=%d ... ", t + 1, num_tests, payload_len);
+
+    loopback_rx_ok = 0;
+    loopback_rx_payload_len = 0;
+
+    ofdmflexframegen_reset(fg);
+    ofdmflexframesync_reset(fs);
+
+    ofdmflexframegen_assemble(fg, header, tx_payload, payload_len);
+
+    last_symbol = 0;
+    while (!last_symbol) {
+      last_symbol = ofdmflexframegen_write(fg, symbol_buffer, OFDM_M + CP_LEN);
+      ofdmflexframesync_execute(fs, symbol_buffer, OFDM_M + CP_LEN);
+    }
+
+    if (loopback_rx_ok && loopback_rx_payload_len == payload_len) {
+      errors = 0;
+      for (j = 0; j < payload_len; j++) {
+        if (loopback_rx_payload[j] != tx_payload[j]) errors++;
+      }
+      if (errors == 0) {
+        fprintf(stderr, "PASS\n");
+        pass_count++;
+      } else {
+        fprintf(stderr, "FAIL (%d byte errors)\n", errors);
+      }
+    } else {
+      fprintf(stderr, "FAIL (frame not received)\n");
+    }
+  }
+
+  ofdmflexframegen_destroy(fg);
+  ofdmflexframesync_destroy(fs);
+
+  fprintf(stderr, "\n==================================\n");
+  fprintf(stderr, "Results: %d/%d tests passed\n", pass_count, num_tests);
+
+  return (pass_count == num_tests) ? 0 : 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int main (int argc, char **argv) {
+
+  int opt;
+  static struct option long_options[] = {
+    {"loopback-test", no_argument, 0, 'T'},
+    {0, 0, 0, 0}
+  };
+
+  while ((opt = getopt_long(argc, argv, "T", long_options, NULL)) != -1) {
+    switch (opt) {
+      case 'T':
+        do_loopback_test = 1;
+        break;
+    }
+  }
+
+  if (do_loopback_test) {
+    return run_loopback_test();
+  }
 
   srandom(time(NULL));
 
@@ -113,13 +239,13 @@ int main (int argc, char **argv) {
   init_ofdm_tx();
 
 
-  pluto_set_in_sample_freq( sample_freq_hz ); 
-  pluto_set_in_bw( rf_bandwidth ); 
-  pluto_set_out_bw( rf_bandwidth ); 
+  pluto_set_in_sample_freq( sample_freq_hz );
+  pluto_set_in_bw( rf_bandwidth );
+  pluto_set_out_bw( rf_bandwidth );
 
   pluto_set_rx_freq( freq_rxtx_hz );  //tx freq also set here
   pluto_set_out_gain( -80 );
-  
+
 
   ack_timer = create_timer();
   timer_reset(ack_timer);
