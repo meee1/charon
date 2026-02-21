@@ -62,26 +62,12 @@ const int charon_added_length = 4 + sizeof(eth_hdr);//charon frame adds 1 eth_hd
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 int ofdm_get_sample_count( int payload_len ) {
 
-int ofdm_sample_count=0;
-
-  //if(ofdm_sample_count!=0) return ofdm_sample_count;  //only do this once on ofdm_tx_init
-
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, ofdm_payload, payload_len);
 
+  unsigned int ofdm_sample_count = ofdmflexframegen_getframelen(ofdm_fg);
 
-  while(1) {
-    ofdm_last_symbol = ofdmflexframegen_write(ofdm_fg, ofdm_symbol_buffer, (OFDM_M+CP_LEN) );
-
-    ofdm_sample_count += (OFDM_M + CP_LEN);
-
-    if(ofdm_last_symbol) {
-      fprintf(stderr, "ofdm_get_sample_count: len: %d samples: %d\n", payload_len, ofdm_sample_count);
-      return ofdm_sample_count;
-    }
-
-  }
-
-  return 0; 
+  fprintf(stderr, "ofdm_get_sample_count: len: %d samples: %d\n", payload_len, ofdm_sample_count);
+  return ofdm_sample_count;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
