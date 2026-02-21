@@ -102,41 +102,12 @@ int first_rx_after_agc_reset;
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
-static int loopback_rx_ok = 0;
-static unsigned char loopback_rx_payload[PAYLOAD_LEN];
-static int loopback_rx_payload_len = 0;
-
-static int loopback_rx_callback(unsigned char *_header,
-    int              _header_valid,
-    unsigned char *  _payload,
-    unsigned int     _payload_len,
-    int              _payload_valid,
-    framesyncstats_s _stats,
-    void *           _userdata)
-{
-  if (_header_valid && _payload_valid) {
-    loopback_rx_ok = 1;
-    if (_payload_len <= PAYLOAD_LEN) {
-      memcpy(loopback_rx_payload, _payload, _payload_len);
-      loopback_rx_payload_len = _payload_len;
-    }
-    fprintf(stderr, "  RSSI: %.2f dB, EVM: %.2f dB\n", _stats.rssi, _stats.evm);
-  } else {
-    fprintf(stderr, "  header_valid=%d, payload_valid=%d\n", _header_valid, _payload_valid);
-  }
-  return 0;
-}
-
 int run_loopback_test(void) {
   int t, j;
   int test_sizes[] = {1, 64, 256, 512, 1024, PAYLOAD_LEN};
   int num_tests = sizeof(test_sizes) / sizeof(test_sizes[0]);
   int pass_count = 0;
-  unsigned char p[OFDM_M];
-  unsigned char header[8] = {0};
   unsigned char tx_payload[PAYLOAD_LEN];
-  float complex symbol_buffer[OFDM_M + CP_LEN];
-  int last_symbol;
   int errors;
   int payload_len;
 
@@ -146,17 +117,9 @@ int run_loopback_test(void) {
   fprintf(stderr, "FEC inner: NONE, FEC outer: SECDED7264\n");
   fprintf(stderr, "Cyclic prefix: %d, Taper: %d\n\n", CP_LEN, TAPER_LEN);
 
-  ofdmframe_init_default_sctype(OFDM_M, p);
-
-  ofdmflexframegenprops_s fgprops;
-  ofdmflexframegenprops_init_default(&fgprops);
-  fgprops.check      = OFDM_CRC;
-  fgprops.fec0       = OFDM_FEC0;
-  fgprops.fec1       = OFDM_FEC1;
-  fgprops.mod_scheme = OFDM_MODULATION;
-
-  ofdmflexframegen fg = ofdmflexframegen_create(OFDM_M, CP_LEN, TAPER_LEN, p, &fgprops);
-  ofdmflexframesync fs = ofdmflexframesync_create(OFDM_M, CP_LEN, TAPER_LEN, p, loopback_rx_callback, NULL);
+  init_ofdm_rx();
+  init_ofdm_tx();
+  ofdm_rx_set_loopback(1);
 
   for (t = 0; t < num_tests; t++) {
     payload_len = test_sizes[t];
@@ -170,16 +133,9 @@ int run_loopback_test(void) {
     loopback_rx_ok = 0;
     loopback_rx_payload_len = 0;
 
-    ofdmflexframegen_reset(fg);
-    ofdmflexframesync_reset(fs);
+    ofdm_rx_reset();
 
-    ofdmflexframegen_assemble(fg, header, tx_payload, payload_len);
-
-    last_symbol = 0;
-    while (!last_symbol) {
-      last_symbol = ofdmflexframegen_write(fg, symbol_buffer, OFDM_M + CP_LEN);
-      ofdmflexframesync_execute(fs, symbol_buffer, OFDM_M + CP_LEN);
-    }
+    ofdm_tx_loopback(tx_payload, payload_len);
 
     if (loopback_rx_ok && loopback_rx_payload_len == payload_len) {
       errors = 0;
@@ -196,9 +152,6 @@ int run_loopback_test(void) {
       fprintf(stderr, "FAIL (frame not received)\n");
     }
   }
-
-  ofdmflexframegen_destroy(fg);
-  ofdmflexframesync_destroy(fs);
 
   fprintf(stderr, "\n==================================\n");
   fprintf(stderr, "Results: %d/%d tests passed\n", pass_count, num_tests);
