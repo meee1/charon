@@ -444,13 +444,11 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
     
     if(is_last) {
 
-      //zero pad the last symbol
-      if(more_tx_data==0) {
-        while(tx_p_dat != tx_p_end) {
-          ((int16_t*)tx_p_dat)[0] = 0; 
-          ((int16_t*)tx_p_dat)[1] = 0; 
-          tx_p_dat += tx_p_inc;
-        }
+      //zero pad the remaining buffer before final push
+      while(tx_p_dat != tx_p_end) {
+        ((int16_t*)tx_p_dat)[0] = 0;
+        ((int16_t*)tx_p_dat)[1] = 0;
+        tx_p_dat += tx_p_inc;
       }
 
       more_tx_data=0;

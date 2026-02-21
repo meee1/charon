@@ -146,8 +146,7 @@ is_accept=0;
 
   if(data_rate_kbps==0) {
     data_rate_kbps = (((sample_freq_hz / DECIMATE_INTERPOLATE_FACTOR)/(OFDM_M+CP_LEN+TAPER_LEN)) * (92*_stats.mod_bps)) /1e3; //92 assumes 128-subcarriers with 92 being data
-    data_rate_kbps *= ( (8.0/12.0) * (64.0/72.0) );   //adjust for FEC coding rate
-                                                      //HAMMING (8/12), SECDED (64/72)
+    data_rate_kbps *= (64.0/72.0);   //adjust for FEC coding rate: SECDED (64/72), inner FEC is NONE (rate 1.0)
   }
 
   lbt_backoff();  //we received something, so wait at least an ofdm symbol before transmitting

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Charon is an embedded C application that transforms Analog Devices PlutoSDR devices into autonomous OFDM transceivers with batman-adv mesh networking. It runs on the PlutoSDR's ARM processor (Xilinx Zynq-7000 Cortex-A9) and implements a 1.4 MHz OFDM-64 QPSK wireless physical layer, providing layer-2 mesh routing for TCP/IP traffic between host systems over ISM bands (915 MHz or 2.4 GHz).
+Charon is an embedded C application that transforms Analog Devices PlutoSDR devices into autonomous OFDM transceivers with batman-adv mesh networking. It runs on the PlutoSDR's ARM processor (Xilinx Zynq-7000 Cortex-A9) and implements a 1.4 MHz OFDM-128 QPSK wireless physical layer, providing layer-2 mesh routing for TCP/IP traffic between host systems over ISM bands (915 MHz or 2.4 GHz).
 
 Named after one of Pluto's moons.
 
@@ -60,7 +60,7 @@ timers.c          Microsecond-resolution timers (gettimeofday-based)
 glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_strtoll,
                   __isoc23_strtoul, and __isoc23_strtoull via linker --wrap flags
 
-ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 8x decimation)
+ofdm_conf.h       OFDM parameters (128 subcarriers, QPSK, FEC, 1x decimation)
 ofdm.h            liquid-dsp internal struct definitions
 ethernet.h        Ethernet frame structures
 
