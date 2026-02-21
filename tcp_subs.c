@@ -64,8 +64,6 @@ static uint16_t upper_layer_chksum(uint8_t proto, uint8_t *eth_buffer)
 
   eth_frame *ethframe = (eth_frame *) eth_buffer;
   ip_hdr *ip = (ip_hdr *) &(ethframe->iphdr);
-  tcp_hdr *tcp = (tcp_hdr *) &(ethframe->ip_proto_payload);
-  udp_hdr *udp = (udp_hdr *) &(ethframe->ip_proto_payload);
 
   upper_layer_len = htons( ip->len ) - sizeof(ip_hdr);
 
@@ -120,10 +118,7 @@ static void sub_mss(int16_t mss_sub_size, uint8_t *eth_frame_buffer)
 {
 
   eth_frame *ethframe = (eth_frame *) eth_frame_buffer;
-  eth_hdr *ethhdr = (eth_hdr *) &(ethframe->ethhdr);
-  ip_hdr *ip = (ip_hdr *) &(ethframe->iphdr);
   tcp_hdr *tcp = (tcp_hdr *) &(ethframe->ip_proto_payload);
-  udp_hdr *udp = (udp_hdr *) &(ethframe->ip_proto_payload);
   int16_t opt_len=0;
   uint8_t *opt_ptr = (uint8_t *) tcp->payload;
   int opt_index=0;
@@ -185,19 +180,14 @@ static void sub_mss(int16_t mss_sub_size, uint8_t *eth_frame_buffer)
 ////////////////////////////////////////////////////////////////////////////////////////////
 int do_tcp_subs(uint8_t *eth_frame_buffer) {
 
-  int16_t i=0;
   int8_t recalc_chksum=0;
-
 
   eth_frame *ethframe = (eth_frame *) eth_frame_buffer;
   eth_hdr *ethhdr = (eth_hdr *) &(ethframe->ethhdr);
   ip_hdr *ip = (ip_hdr *) &(ethframe->iphdr);
   tcp_hdr *tcp = (tcp_hdr *) &(ethframe->ip_proto_payload);
-  udp_hdr *udp = (udp_hdr *) &(ethframe->ip_proto_payload);
-  uint8_t *payload = (uint8_t *) tcp->payload;
 
   if( htons( ethhdr->eth_type ) != ETH_IP_TYPE ) {
-    //fprintf(stderr, "\nnot ip4, exiting tcp_subs");
     return 0;
   }
 
@@ -220,8 +210,6 @@ int do_tcp_subs(uint8_t *eth_frame_buffer) {
     ip->chksum = 0;
     ip->chksum = ~ipchksum( (void *) ip );
 
-    //new frame length
-    //fprintf(stderr, "\ndid ip4 tcp_sub");
     return htons(ip->len) + sizeof(eth_hdr);
   }
 

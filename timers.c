@@ -20,33 +20,11 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#include <iio.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <time.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <math.h>
-#include <complex.h>
-#include "liquid/liquid.h"
 
-#include "pluto.h"
-#include "ofdm_conf.h"
-#include "ofdm_rx.h"
-#include "charon.h"
-#include "fftw3.h"
-#include "ofdm.h"
-#include "tap_device.h"
 #include "timers.h"
 
-
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
-//typedef struct timer_obj {
-//  struct timeval start;
-//  struct timeval end;
-//} timer_obj;
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////

@@ -21,16 +21,13 @@
 //SOFTWARE.
 
 #include <iio.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <complex.h>
 #include <unistd.h>
-#include <getopt.h>
 #include <math.h>
-#include <float.h>
-  
+
 #include "liquid/liquid.h"
 #include "filters/pluto/pluto_filters.h"
 #include "ad9361.h"
@@ -66,11 +63,9 @@ static struct iio_channel *phy_altvoltage0;   // phy "altvoltage0" output (RX LO
 static struct iio_channel *phy_altvoltage1;   // phy "altvoltage1" output (TX LO)
 
 static struct iio_buffer *rxbuf;
-static void *p_dat, *p_end, *p_start;
+static void *p_dat, *p_end;
 static ptrdiff_t p_inc;
 static int pluto_rx_initialized=0;
-
-static int tx_fd;
 
 static struct iio_buffer *txbuf;
 static char *tx_p_dat, *tx_p_end;
@@ -79,27 +74,15 @@ static int pluto_tx_initialized=0;
 
 static int tx_enabled=0;
 
-static int nbytes_tx;
 static int llen;
 static int ii=0;
 static int n_rx;
 
 static long long prev_gain;
 
-static int64_t time_to_tx;
-
-static long long agc_gain = 72;
-static int agc_locked=0;
-
 int rx_timeout;
-static int16_t _txi;
-static int16_t _txq;
-static int16_t _rxi;
-static int16_t _rxq;
-static int pushed;
 static struct iio_context *ctx;
 static long long rssi;
-static long long gain_val;
 static int more_data;
 static int more_tx_data;
 
@@ -134,11 +117,7 @@ struct iio_context * pluto_init_txrx() {
     iio_channel_enable(tx0_i);
     iio_channel_enable(tx0_q);
 
-    ad9361_set_bb_rate_custom_filter_auto	(phy, sample_freq_hz);
-
-    //pluto_enable_fir(0);
-    //pluto_set_filter();
-    //pluto_enable_fir(1);
+    ad9361_set_bb_rate_custom_filter_auto(phy, sample_freq_hz);
 
     pluto_set_out_gain( -80 );
 
@@ -166,16 +145,13 @@ struct iio_context * pluto_init_txrx() {
       pluto_rx_initialized=1;
       iio_buffer_set_blocking_mode(rxbuf,false);
 
-      p_inc = iio_buffer_step(rxbuf);//no need to init this every loop
-
-      //fprintf(stderr, "\npluto rx buffer size: %d", IIO_RX_BUFFER_SIZE ); 
+      p_inc = iio_buffer_step(rxbuf);
      }
 
     //TX Buffer
     if(!pluto_tx_initialized) {
 
-      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN), false); //0==auto
-      //fprintf(stderr, "\npluto tx buffer size: %d , buffer: %d", ofdm_get_sample_count(PAYLOAD_LEN) , (OFDM_M+CP_LEN+TAPER_LEN)*DECIMATE_INTERPOLATE_FACTOR/4 ); 
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN), false);
 
       if (!txbuf) {
           perror("Could not create TX buffer");
@@ -218,8 +194,6 @@ long long pluto_get_in_gain(void) {
       "hardwaregain",
       &gain_val);
 
-  //fprintf(stderr, "\ngain: %lld", gain_val);
-
   return gain_val;
 }
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -243,8 +217,6 @@ long long pluto_get_in_rssi(void) {
         phy_voltage0_in,
       "rssi",
       &rssi);
-
-  //fprintf(stderr, "\nin_rssi: %lld", -rssi);
 
   return -rssi;
 }
@@ -330,7 +302,7 @@ void pluto_set_in_sample_freq(long long sfreq) {
         "sampling_frequency",
         sfreq);
 
-    ad9361_set_bb_rate_custom_filter_auto	(phy, sfreq);
+    ad9361_set_bb_rate_custom_filter_auto(phy, sfreq);
 
     current_sample_freq = sfreq;
 }
@@ -343,8 +315,6 @@ void pluto_set_out_gain(long long gain) {
       phy_voltage0_out,
       "hardwaregain",
       gain);
-  //fprintf(stderr, "\nsetting tx gain %lld", gain);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////

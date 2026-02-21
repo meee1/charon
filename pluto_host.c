@@ -63,9 +63,6 @@ static int tx_enabled=0;
 static int llen;
 static int ii=0;
 
-static long long agc_gain = 72;
-static int agc_locked=0;
-
 int rx_timeout;
 
 long long pluto_current_gain;
@@ -73,7 +70,6 @@ long long current_rx_freq;
 long long current_sample_freq;
 
 static int16_t rx_buffer[16384];  // Larger buffer for UDP packets
-static int rx_buf_fill = 0;
 static int ofdm_initialized = 0;
 
 ///////////////////////////////////////////////////////////////////////////////////////

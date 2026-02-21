@@ -105,26 +105,6 @@ typedef struct __attribute__((packed))
 }
 batman_unicast;
 
-#define TCP_FIN 0x01
-#define TCP_SYN 0x02
-#define TCP_RST 0x04
-#define TCP_PSH 0x08
-#define TCP_ACK 0x10
-#define TCP_URG 0x20
-#define TCP_CTL 0x3f
-
-#define TCP_OPT_END     0
-#define TCP_OPT_NOOP    1
-#define TCP_OPT_MSS     2
-#define TCP_OPT_WIN_SCALE 3
-#define TCP_OPT_SACK  4
-#define TCP_OPT_TIMESTAMP 8
-
-#define TCP_MAX_OPTIONS_LEN 20
-
-#define ICMP_ECHO_REPLY 0
-#define ICMP_ECHO_REQUEST 8
-
 typedef struct __attribute__((packed))
 {
   uint8_t     version;

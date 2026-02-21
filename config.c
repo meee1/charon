@@ -27,17 +27,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#include "liquid/liquid.h"
-
-#include "pluto.h"
 #include "ofdm_conf.h"
-#include "ofdm_rx.h"
-#include "ofdm_tx.h"
-#include "charon.h"
-
 #include "tap_device.h"
-#include "fftw3.h"
-#include "ofdm.h"
 #include "util.h"
 #include "config.h"
 
@@ -309,7 +300,7 @@ void read_config() {
       sleep(1);
       system("/sbin/ip link set up dev mesh-bridge");
       sleep(1);
-      sprintf( cmd_str, "/sbin/ifconfig mesh-bridge %s up\0", usb_ip); 
+      sprintf(cmd_str, "/sbin/ifconfig mesh-bridge %s up", usb_ip);
       system(cmd_str);
       sleep(1);
   }
@@ -340,12 +331,12 @@ void read_config() {
       sleep(1);
       system("/sbin/ip link set up dev mesh-bridge");
       sleep(1);
-      sprintf( cmd_str, "/sbin/ifconfig mesh-bridge %s up\0", usb_ip); 
+      sprintf(cmd_str, "/sbin/ifconfig mesh-bridge %s up", usb_ip);
       system(cmd_str);
       sleep(1);
   }
 
-  sprintf( cmd_str, "/usr/sbin/batctl it %d\0", bat_ogm_interval); 
+  sprintf(cmd_str, "/usr/sbin/batctl it %d", bat_ogm_interval);
   system(cmd_str); //originator frame interval in ms 
 
   fprintf(stderr,"\ngiving charon a cpu core to itself.");

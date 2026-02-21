@@ -48,7 +48,6 @@ static unsigned char ofdm_header[8];            // header data
 static unsigned char ofdm_payload[32*1024]; 
 static unsigned char ofdm_p[OFDM_M];                 // subcarrier allocation (null/pilot/data)
 static int ofdm_last_symbol;
-static int ofdm_index=0;
 
 static ofdmflexframegen ofdm_fg;
 
