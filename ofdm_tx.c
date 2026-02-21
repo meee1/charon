@@ -33,6 +33,7 @@
 
 #include "ofdm_conf.h"
 #include "ofdm_tx.h"
+#include "ofdm_rx.h"
 #include "pluto.h"
 #include "ethernet.h"
 #include "tap_device.h"
@@ -178,6 +179,26 @@ do_send:
     if(ofdm_last_symbol) {
       elapsed = timer_elapsed_usec(timer1);
       fprintf(stderr, ", frame tx time: %lld usec", elapsed);
+      return 0;
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+int ofdm_tx_loopback(uint8_t *payload, int len) {
+  int i;
+
+  ofdmflexframegen_assemble(ofdm_fg, ofdm_header, payload, len);
+
+  while(1) {
+    ofdm_last_symbol = ofdmflexframegen_write(ofdm_fg, ofdm_symbol_buffer, (OFDM_M+CP_LEN));
+
+    for (i = 0; i < OFDM_M + CP_LEN; i++) {
+      do_ofdm_rx(ofdm_symbol_buffer[i]);
+    }
+
+    if(ofdm_last_symbol) {
       return 0;
     }
   }

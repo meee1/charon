@@ -57,6 +57,8 @@
 
 
 
+static int do_loopback_test = 0;
+
 static int max_retrans;
 
 //opts
@@ -100,7 +102,84 @@ int first_rx_after_agc_reset;
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+int run_loopback_test(void) {
+  int t, j;
+  int test_sizes[] = {1, 64, 256, 512, 1024, PAYLOAD_LEN};
+  int num_tests = sizeof(test_sizes) / sizeof(test_sizes[0]);
+  int pass_count = 0;
+  unsigned char tx_payload[PAYLOAD_LEN];
+  int errors;
+  int payload_len;
+
+  fprintf(stderr, "Charon OFDM internal loopback test\n");
+  fprintf(stderr, "==================================\n");
+  fprintf(stderr, "Subcarriers: %d, Modulation: QPSK, CRC: CRC-32\n", OFDM_M);
+  fprintf(stderr, "FEC inner: NONE, FEC outer: SECDED7264\n");
+  fprintf(stderr, "Cyclic prefix: %d, Taper: %d\n\n", CP_LEN, TAPER_LEN);
+
+  init_ofdm_rx();
+  init_ofdm_tx();
+  ofdm_rx_set_loopback(1);
+
+  for (t = 0; t < num_tests; t++) {
+    payload_len = test_sizes[t];
+
+    for (j = 0; j < payload_len; j++) {
+      tx_payload[j] = (unsigned char)(j & 0xFF);
+    }
+
+    fprintf(stderr, "Test %d/%d: payload_len=%d ... ", t + 1, num_tests, payload_len);
+
+    loopback_rx_ok = 0;
+    loopback_rx_payload_len = 0;
+
+    ofdm_rx_reset();
+
+    ofdm_tx_loopback(tx_payload, payload_len);
+
+    if (loopback_rx_ok && loopback_rx_payload_len == payload_len) {
+      errors = 0;
+      for (j = 0; j < payload_len; j++) {
+        if (loopback_rx_payload[j] != tx_payload[j]) errors++;
+      }
+      if (errors == 0) {
+        fprintf(stderr, "PASS\n");
+        pass_count++;
+      } else {
+        fprintf(stderr, "FAIL (%d byte errors)\n", errors);
+      }
+    } else {
+      fprintf(stderr, "FAIL (frame not received)\n");
+    }
+  }
+
+  fprintf(stderr, "\n==================================\n");
+  fprintf(stderr, "Results: %d/%d tests passed\n", pass_count, num_tests);
+
+  return (pass_count == num_tests) ? 0 : 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int main (int argc, char **argv) {
+
+  int opt;
+  static struct option long_options[] = {
+    {"loopback-test", no_argument, 0, 'T'},
+    {0, 0, 0, 0}
+  };
+
+  while ((opt = getopt_long(argc, argv, "T", long_options, NULL)) != -1) {
+    switch (opt) {
+      case 'T':
+        do_loopback_test = 1;
+        break;
+    }
+  }
+
+  if (do_loopback_test) {
+    return run_loopback_test();
+  }
 
   srandom(time(NULL));
 
@@ -113,13 +192,13 @@ int main (int argc, char **argv) {
   init_ofdm_tx();
 
 
-  pluto_set_in_sample_freq( sample_freq_hz ); 
-  pluto_set_in_bw( rf_bandwidth ); 
-  pluto_set_out_bw( rf_bandwidth ); 
+  pluto_set_in_sample_freq( sample_freq_hz );
+  pluto_set_in_bw( rf_bandwidth );
+  pluto_set_out_bw( rf_bandwidth );
 
   pluto_set_rx_freq( freq_rxtx_hz );  //tx freq also set here
   pluto_set_out_gain( -80 );
-  
+
 
   ack_timer = create_timer();
   timer_reset(ack_timer);
