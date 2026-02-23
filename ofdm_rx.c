@@ -41,6 +41,7 @@
 #include "crc.h"
 #include "ethernet.h"
 #include "config.h"
+#include "pss_sync.h"
 
 static unsigned int M = OFDM_M;        // number of subcarriers
 static unsigned int cp_len = CP_LEN;   // cyclic prefix length
@@ -104,6 +105,7 @@ void ofdm_rx_set_loopback(int enable) {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void ofdm_rx_reset(void) {
   ofdmflexframesync_reset(fs);
+  pss_sync_reset();
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -360,6 +362,13 @@ void init_ofdm_rx(void) {
 
   ofdmflexframesync_print(fs);
 
+  // Eagerly cache the inner-sync pointers so do_ofdm_rx() can access them
+  // before the first call to ofdm_rx_state().
+  _q  = fs;
+  _qq = _q->fs;
+
+  pss_sync_init();
+
   //ofdm_nco = nco_crcf_create(LIQUID_NCO);
   //nco_crcf_set_frequency(ofdm_nco, 0); 
 }
@@ -367,5 +376,19 @@ void init_ofdm_rx(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_rx(float complex sample) {
+  // While the frame-synchronizer is hunting for the PLCP preamble, run the
+  // PSS correlator in parallel.  If a PSS preamble is detected the estimated
+  // CFO is applied to the inner NCO so that the subsequent PLCP sync has a
+  // better frequency starting point.
+  if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
+    if (pss_sync_execute(sample)) {
+      float cfo = pss_sync_get_freq_offset();   // cycles/sample
+      nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
+      fprintf(stderr, "\nPSS: detected CFO=%.6f rad/samp (hyp %+d sc, peak=%.3f)",
+              2.0f * (float)M_PI * cfo,
+              (int)(cfo * (float)OFDM_M + (cfo >= 0.0f ? 0.5f : -0.5f)),
+              pss_sync_get_peak());
+    }
+  }
   ofdmflexframesync_execute(fs, &sample, 1);
 }
