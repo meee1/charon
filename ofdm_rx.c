@@ -153,6 +153,7 @@ void *           _userdata) {
       if (_payload_len <= PAYLOAD_LEN)
         memcpy(loopback_rx_payload, _payload, _payload_len);
       fprintf(stderr, "  RSSI: %.2f dB, EVM: %.2f dB\n", _stats.rssi, _stats.evm);
+      ofdmflexframesync_print(fs);
     }
     return 0;
   }

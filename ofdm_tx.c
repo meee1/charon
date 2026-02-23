@@ -184,6 +184,7 @@ int ofdm_tx_loopback(uint8_t *payload, int len) {
     }
 
     if(ofdm_last_symbol) {
+      ofdmflexframegen_print(ofdm_fg);
       return 0;
     }
   }

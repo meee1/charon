@@ -33,7 +33,7 @@
 #define PAYLOAD_LEN 1514 
 
 #define OFDM_M 128
-#define CP_LEN  4 
+#define CP_LEN  16 
 #define TAPER_LEN 2
 #define OFDM_TIMEOUT_SEC 5
 

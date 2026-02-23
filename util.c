@@ -68,7 +68,8 @@ struct in_addr addr;
     if((strcmp(ifa->ifa_name,if_name)==0)&&(ifa->ifa_addr->sa_family==AF_INET)) {
       //printf("\tInterface : <%s>\n",ifa->ifa_name );
       //printf("\t  Address : <%s>\n", host); 
-      strncpy(ip_a, host, sizeof(host)-1);
+      strncpy(ip_a, host, INET_ADDRSTRLEN-1);
+      ip_a[INET_ADDRSTRLEN-1] = '\0';
       inet_aton(host, &addr);
 
       //sa = (struct sockaddr_in *) ifa->ifa_addr;
