@@ -78,7 +78,7 @@ static struct ofdmframesync_s *_qq;
 static uint8_t frame_buffer[2346];
 static int frame_len;
 
-static nco_crcf ofdm_nco;
+//static nco_crcf ofdm_nco;
 
 static uint32_t in_pid;
 static uint8_t ack_mac[6];
@@ -111,7 +111,7 @@ void ofdm_rx_reset(void) {
 void bump_nco() {
   static int nco_mod=0;
   if(nco_mod++%128==0) {
-    nco_crcf_set_frequency(ofdm_nco, ((float)rand()/(float)RAND_MAX)*1e-4  );  //spread some of the dc offset /flicker noise out
+    //nco_crcf_set_frequency(ofdm_nco, ((float)rand()/(float)RAND_MAX)*1e-4  );  //spread some of the dc offset /flicker noise out
                                                                  // by +/- 140Hz
   }
 }
@@ -119,8 +119,8 @@ void bump_nco() {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_mix_down(float complex sample, float complex *y) {
-  nco_crcf_step(ofdm_nco);
-  nco_crcf_mix_down(ofdm_nco, sample, y);
+  //nco_crcf_step(ofdm_nco);
+  //nco_crcf_mix_down(ofdm_nco, sample, y);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -360,8 +360,8 @@ void init_ofdm_rx(void) {
 
   ofdmflexframesync_print(fs);
 
-  ofdm_nco = nco_crcf_create(LIQUID_NCO);
-  nco_crcf_set_frequency(ofdm_nco, 0); 
+  //ofdm_nco = nco_crcf_create(LIQUID_NCO);
+  //nco_crcf_set_frequency(ofdm_nco, 0); 
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
