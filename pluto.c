@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <errno.h>
+#include <sys/time.h>
 
 #include "liquid/liquid.h"
 #include "filters/pluto/pluto_filters.h"
@@ -95,9 +96,16 @@ long long current_sample_freq;
 ///////////////////////////////////////////////////////////////////////////////////////
 struct iio_context * pluto_init_txrx() {
 
+    fprintf(stderr, "\n[pluto] creating local IIO context...");
     ctx = iio_create_local_context();
+    if (!ctx) {
+        fprintf(stderr, "\n[pluto] ERROR: failed to create local IIO context");
+    } else {
+        fprintf(stderr, "\n[pluto] IIO context created successfully");
+    }
 
     phy = iio_context_find_device(ctx, "ad9361-phy");
+    fprintf(stderr, "\n[pluto] ad9361-phy device: %p", (void*)phy);
 
     // cache phy channel pointers once at init
     phy_voltage0_in  = iio_device_find_channel(phy, "voltage0", false);
@@ -107,19 +115,43 @@ struct iio_context * pluto_init_txrx() {
 
     tx_dev = iio_context_find_device(ctx, "cf-ad9361-dds-core-lpc");
     rx_dev = iio_context_find_device(ctx, "cf-ad9361-lpc");
+    fprintf(stderr, "\n[pluto] tx_dev: %p, rx_dev: %p", (void*)tx_dev, (void*)rx_dev);
 
     rx0_i = iio_device_find_channel(rx_dev, "voltage0", 0);
     rx0_q = iio_device_find_channel(rx_dev, "voltage1", 0);
+    fprintf(stderr, "\n[pluto] RX channels: I=%p Q=%p", (void*)rx0_i, (void*)rx0_q);
     iio_channel_enable(rx0_i);
     iio_channel_enable(rx0_q);
 
     tx0_i = iio_device_find_channel(tx_dev, "voltage0", 1);
     tx0_q = iio_device_find_channel(tx_dev, "voltage1", 1);
+    fprintf(stderr, "\n[pluto] TX channels: I=%p Q=%p", (void*)tx0_i, (void*)tx0_q);
     iio_channel_enable(tx0_i);
     iio_channel_enable(tx0_q);
 
-    ad9361_set_bb_rate_custom_filter_auto(phy, sample_freq_hz);
+    {
+      unsigned long rate = (unsigned long)sample_freq_hz;
+      unsigned long fpass = rate;            // passband edge at full sample rate
+      unsigned long fstop = fpass * 5 / 4;  // stopband 25% beyond passband
+      unsigned long wnom = rate;             // analog filter at full sample rate
+      fprintf(stderr, "\n[pluto] setting bb rate custom filter manual: rate=%lu Fpass=%lu Fstop=%lu wnom_tx=%lu wnom_rx=%lu",
+              rate, fpass, fstop, wnom, wnom);
+      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+    }
 
+    {
+      long long hw_sfreq = 0, hw_rx_bw = 0, hw_tx_bw = 0, hw_rx_lo = 0, hw_tx_lo = 0;
+      iio_channel_attr_read_longlong(phy_voltage0_in, "sampling_frequency", &hw_sfreq);
+      iio_channel_attr_read_longlong(phy_voltage0_in, "rf_bandwidth", &hw_rx_bw);
+      iio_channel_attr_read_longlong(phy_voltage0_out, "rf_bandwidth", &hw_tx_bw);
+      iio_channel_attr_read_longlong(phy_altvoltage0, "frequency", &hw_rx_lo);
+      iio_channel_attr_read_longlong(phy_altvoltage1, "frequency", &hw_tx_lo);
+      fprintf(stderr, "\n[pluto] HW sample rate: %lld Hz", hw_sfreq);
+      fprintf(stderr, "\n[pluto] HW RX bandwidth: %lld Hz, TX bandwidth: %lld Hz", hw_rx_bw, hw_tx_bw);
+      fprintf(stderr, "\n[pluto] HW RX LO: %lld Hz, TX LO: %lld Hz", hw_rx_lo, hw_tx_lo);
+    }
+
+    fprintf(stderr, "\n[pluto] setting initial TX gain to -80 dB");
     pluto_set_out_gain( -80 );
 
     iio_channel_attr_write(
@@ -135,6 +167,7 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
+      fprintf(stderr, "\n[pluto] creating RX buffer (1400 samples)...");
       rxbuf = iio_device_create_buffer(rx_dev, 1400, false);
 
 
@@ -147,12 +180,14 @@ struct iio_context * pluto_init_txrx() {
       iio_buffer_set_blocking_mode(rxbuf,false);
 
       p_inc = iio_buffer_step(rxbuf);
+      fprintf(stderr, "\n[pluto] RX buffer created, step=%td", p_inc);
      }
 
     //TX Buffer
     if(!pluto_tx_initialized) {
 
-      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN), false);
+      fprintf(stderr, "\n[pluto] creating TX buffer (%d samples)...", (OFDM_M+CP_LEN+TAPER_LEN)*22);
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*22, false);
 
       if (!txbuf) {
           perror("Could not create TX buffer");
@@ -163,9 +198,11 @@ struct iio_context * pluto_init_txrx() {
       pluto_tx_initialized=1;
 
       tx_p_inc = iio_buffer_step(txbuf);  //no need to init this every loop
-        
+      fprintf(stderr, "\n[pluto] TX buffer created, step=%td", tx_p_inc);
+
     }
 
+    fprintf(stderr, "\n[pluto] init complete");
 
     return ctx;
 }
@@ -173,14 +210,16 @@ struct iio_context * pluto_init_txrx() {
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_filter() {
-  iio_device_attr_write_raw( phy, 
-        "filter_fir_config", 
-        LTE1p4_MHz_ftr, 
+  fprintf(stderr, "\n[pluto] loading FIR filter (%d bytes)", LTE1p4_MHz_ftr_len);
+  iio_device_attr_write_raw( phy,
+        "filter_fir_config",
+        LTE1p4_MHz_ftr,
         LTE1p4_MHz_ftr_len);
 }
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_enable_fir(int enable) {
+  fprintf(stderr, "\n[pluto] FIR enable=%d", enable);
   ad9361_set_trx_fir_enable(phy, enable);
 }
 
@@ -201,6 +240,7 @@ long long pluto_get_in_gain(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_gain_auto_fast(void) {
 
+    fprintf(stderr, "\n[pluto] setting AGC mode: fast_attack");
     iio_channel_attr_write(
         phy_voltage0_in,
         "gain_control_mode",
@@ -225,6 +265,7 @@ long long pluto_get_in_rssi(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void enable_rx() {
 
+  fprintf(stderr, "\n[pluto] enabling RX at %lld Hz", current_rx_freq);
   iio_channel_attr_write_longlong(
       phy_altvoltage0,
       "frequency",
@@ -234,23 +275,25 @@ void enable_rx() {
 ///////////////////////////////////////////////////////////////////////////////////////
 void disable_rx() {
 
-
+  fprintf(stderr, "\n[pluto] disabling RX (detuning +2 MHz from %lld Hz)", current_rx_freq);
   prev_gain = pluto_get_in_gain();
 
   iio_channel_attr_write_longlong(
       phy_altvoltage0,
       "frequency",
-      current_rx_freq+1000000 );
+      current_rx_freq+2000000 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_bump_agc_down(int delta) {
+  fprintf(stderr, "\n[pluto] bumping AGC down by %d", delta);
   pluto_set_in_gain( pluto_get_in_gain()+delta );
 }
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_bump_agc_up(int delta) {
+  fprintf(stderr, "\n[pluto] bumping AGC up by %d", delta);
   pluto_set_in_gain( pluto_get_in_gain()+delta );
 }
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -260,6 +303,7 @@ void pluto_set_in_gain(long long gain) {
     if(gain<6) gain = 6;
     if(gain>73) gain = 73;
 
+    fprintf(stderr, "\n[pluto] setting RX gain: %lld dB (manual)", gain);
     iio_channel_attr_write(
         phy_voltage0_in,
         "gain_control_mode",
@@ -277,6 +321,7 @@ void pluto_set_in_gain(long long gain) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_out_bw(long long chbw) {
 
+    fprintf(stderr, "\n[pluto] setting TX bandwidth: %lld Hz", chbw);
     iio_channel_attr_write_longlong(
         phy_voltage0_out,
         "rf_bandwidth",
@@ -287,6 +332,7 @@ void pluto_set_out_bw(long long chbw) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_bw(long long chbw) {
 
+    fprintf(stderr, "\n[pluto] setting RX bandwidth: %lld Hz", chbw);
     iio_channel_attr_write_longlong(
         phy_voltage0_in,
         "rf_bandwidth",
@@ -298,20 +344,29 @@ void pluto_set_in_bw(long long chbw) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_sample_freq(long long sfreq) {
 
+    fprintf(stderr, "\n[pluto] setting sample freq: %lld Hz", sfreq);
     iio_channel_attr_write_longlong(
         phy_voltage0_in,
         "sampling_frequency",
         sfreq);
 
-    ad9361_set_bb_rate_custom_filter_auto(phy, sfreq);
+    {
+      unsigned long rate = (unsigned long)sfreq;
+      unsigned long fpass = rate / 2;
+      unsigned long fstop = fpass * 5 / 4;
+      unsigned long wnom = rate;
+      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+    }
 
     current_sample_freq = sfreq;
+    fprintf(stderr, "\n[pluto] sample freq set to %lld Hz", current_sample_freq);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_out_gain(long long gain) {
 
+  fprintf(stderr, "\n[pluto] setting TX gain: %lld dB", gain);
   iio_channel_attr_write_longlong(
       phy_voltage0_out,
       "hardwaregain",
@@ -324,6 +379,7 @@ void pluto_set_tx_freq(long long freq_tx_hz) {
 
   //NOTE: offset correction is done in set_rx_freq!!!!
 
+  fprintf(stderr, "\n[pluto] setting TX LO freq: %lld Hz", freq_tx_hz);
   iio_channel_attr_write_longlong(
       phy_altvoltage1,
       "frequency",
@@ -333,9 +389,11 @@ void pluto_set_tx_freq(long long freq_tx_hz) {
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_enable_tx( int enable) {
+  fprintf(stderr, "\n[pluto] TX enable=%d", enable);
   tx_enabled = enable;
 
   if(tx_enabled==0) {
+    fprintf(stderr, "\n[pluto] TX disabled, parking TX LO and muting gain");
     pluto_set_tx_freq(5999000000);
     pluto_set_out_gain( -80 );
   }
@@ -389,6 +447,7 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 {
 
     llen = len;
+    fprintf(stderr, "\n[pluto] TX: len=%d is_last=%d dump_rx=%d", len, is_last, do_dump_rx);
 
     if(more_tx_data==0) {
       tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
@@ -406,6 +465,7 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 
       if(tx_p_dat == tx_p_end) {
         iio_buffer_push(txbuf);
+        fprintf(stderr, "\n[pluto] TX: pushing intermitant buffer");
         tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
         tx_p_end = (char *) iio_buffer_end(txbuf);
         more_tx_data=1;
@@ -416,14 +476,16 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
     if(is_last) {
 
       //zero pad the remaining buffer before final push
+      fprintf(stderr, "\n[pluto] TX: zero padding final buffer, %td bytes to end of buffer", (tx_p_end - tx_p_dat)/tx_p_inc);
       while(tx_p_dat != tx_p_end) {
         ((int16_t*)tx_p_dat)[0] = 0;
         ((int16_t*)tx_p_dat)[1] = 0;
         tx_p_dat += tx_p_inc;
       }
 
-      more_tx_data=0;
+      more_tx_data=0;      
       iio_buffer_push(txbuf); //send out the last symbol to the dma
+      fprintf(stderr, "\n[pluto] TX: pushing final buffer and flushing RX");
 
       while( iio_buffer_refill(rxbuf) > 0); //flush the rx buffer
     }
@@ -435,6 +497,9 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 ///////////////////////////////////////////////////////////////////////////////////////
 int pluto_receive() {
 
+  static long long rx_sample_count = 0;
+  static struct timeval rx_stat_tv = {0, 0};
+
   if(p_dat == p_end || !more_data) {
     ssize_t nbytes = iio_buffer_refill(rxbuf);
     if(nbytes == -EAGAIN || nbytes < 0) return 0;
@@ -444,7 +509,7 @@ int pluto_receive() {
     more_data=1;
   }
 
-  if(p_inc == 4 && n_rx > 0) {
+  if(false && p_inc == 4 && n_rx > 0) {
     // fast path: samples are contiguous int16 IQ pairs
     int avail = (p_end - p_dat) / 4;
     if(avail > n_rx) avail = n_rx;
@@ -454,13 +519,31 @@ int pluto_receive() {
     if(n_rx == 0) {
       more_data = (p_dat != p_end) ? 1 : 0;
     }
-  } else {
+  } else if (n_rx > 0) {
     for ( ;p_dat < p_end; p_dat += p_inc) {
       do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] );
+      rx_sample_count++;
       if(--n_rx==0) {
         more_data = (p_dat!=p_end) ? 1 : 0;
-        return 0;
+        break;
       }
+    }
+  }
+
+ 
+
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  if(rx_stat_tv.tv_sec == 0) {
+    rx_stat_tv = now;
+  } else {
+    long long elapsed_us = (now.tv_sec - rx_stat_tv.tv_sec) * 1000000LL
+                         + (now.tv_usec - rx_stat_tv.tv_usec);
+    if(elapsed_us >= 1000000LL) {
+      double sps = (double)rx_sample_count / ((double)elapsed_us / 1e6);
+      fprintf(stderr, "\n[pluto] RX: %.0f samples/sec", sps);
+      rx_sample_count = 0;
+      rx_stat_tv = now;
     }
   }
 

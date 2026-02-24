@@ -114,7 +114,8 @@ static void pss_gen_zc(float complex *seq, int N, int u)
 void pss_sync_init(void)
 {
     int hi, n;
-
+    fprintf(stderr, "\n[pss_sync] init: ZC root=%d len=%d, hypotheses=%d, thresh=%.2f, freq_step=%.6f",
+            PSS_ZC_ROOT, PSS_ZC_LEN, PSS_N_HYPOTHESES, PSS_CORR_THRESH, PSS_FREQ_STEP);
     pss_gen_zc(pss_ref, PSS_ZC_LEN, PSS_ZC_ROOT);
 
     // Precompute pss_rot_ref[hi][n] = exp(-j·2π·h·PSS_FREQ_STEP·n) · conj(pss_ref[n])
@@ -132,12 +133,15 @@ void pss_sync_init(void)
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
     pss_peak_corr = 0.0f;
+    fprintf(stderr, "\n[pss_sync] init complete, ref[0]=(%.4f,%.4f) ref[1]=(%.4f,%.4f)",
+            crealf(pss_ref[0]), cimagf(pss_ref[0]), crealf(pss_ref[1]), cimagf(pss_ref[1]));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void pss_sync_reset(void)
 {
+    fprintf(stderr, "\n[pss_sync] reset");
     memset(pss_buf, 0, sizeof(pss_buf));
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
@@ -203,6 +207,8 @@ int pss_sync_execute(float complex sample)
         // CFO estimate: the offset that was removed by the best hypothesis
         // equals best_h subcarrier spacings = best_h / OFDM_M cycles/sample
         pss_cfo_est = (float)best_h * PSS_FREQ_STEP;
+        fprintf(stderr, "\n[pss_sync] DETECTED: corr=%.4f hypo=%d cfo=%.6f cyc/samp rx_pwr=%.2f",
+                best_corr, best_h, pss_cfo_est, rx_power);
         return 1;
     }
 
@@ -239,4 +245,5 @@ void pss_sync_get_tx_samples(float complex *buf, int *len)
     for (r = 0; r < PSS_TX_REPS; r++)
         memcpy(buf + r * PSS_ZC_LEN, pss_ref, PSS_ZC_LEN * sizeof(float complex));
     *len = PSS_TX_REPS * PSS_ZC_LEN;
+    fprintf(stderr, "\n[pss_sync] get_tx_samples: reps=%d zc_len=%d total=%d", PSS_TX_REPS, PSS_ZC_LEN, *len);
 }

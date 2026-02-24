@@ -179,9 +179,9 @@ int main (int argc, char **argv) {
   init_ofdm_rx();
   init_ofdm_tx();
 
-  pluto_set_in_sample_freq( sample_freq_hz );
-  pluto_set_in_bw( rf_bandwidth );
-  pluto_set_out_bw( rf_bandwidth );
+  //pluto_set_in_sample_freq( sample_freq_hz );
+  //pluto_set_in_bw( rf_bandwidth );
+  //pluto_set_out_bw( rf_bandwidth );
 
   pluto_set_rx_freq( freq_rxtx_hz );  //tx freq also set here
   pluto_set_out_gain( -80 );

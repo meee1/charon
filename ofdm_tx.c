@@ -44,7 +44,7 @@ static unsigned int ofdm_cp_len;
 static unsigned int ofdm_taper_len;
 static unsigned int ofdm_payload_len;
 
-static float complex ofdm_symbol_buffer[OFDM_M + CP_LEN];   // time-domain buffer
+static float complex ofdm_symbol_buffer[(OFDM_M + CP_LEN)*10];   // time-domain buffer
 static unsigned char ofdm_header[8];            // header data
 static unsigned char ofdm_payload[32*1024]; 
 static unsigned char ofdm_p[OFDM_M];                 // subcarrier allocation (null/pilot/data)
@@ -160,29 +160,23 @@ do_send:
   // granularity; the final chunk is zero-padded to fill the slot.
   {
     static float complex pss_buf[PSS_TX_MAX_SAMPLES];
-    static float complex pss_chunk[OFDM_M + CP_LEN];
     int pss_len = 0;
     int pi;
     pss_sync_get_tx_samples(pss_buf, &pss_len);
-    for (pi = 0; pi < pss_len; pi += (OFDM_M + CP_LEN)) {
-      int chunk = pss_len - pi;
-      if (chunk > OFDM_M + CP_LEN) chunk = OFDM_M + CP_LEN;
-      memset(pss_chunk, 0, sizeof(pss_chunk));
-      memcpy(pss_chunk, pss_buf + pi, chunk * sizeof(float complex));
-      pluto_transmit(pss_chunk, (OFDM_M + CP_LEN), 0, 0);
-    }
+    fprintf(stderr, "\n[ofdm_tx] PSS preamble: pss_len=%d", pss_len);
+    pluto_transmit(pss_buf, pss_len, 0, 0);
   }
 
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, ofdm_payload, tlen);
   elapsed = timer_elapsed_usec(timer1);
 
-  fprintf(stderr, ", frame assembly time: %lld usec", elapsed);
+  fprintf(stderr, ", frame assembly time: %lld usec, tlen %d", elapsed, tlen);
 
   timer_reset(timer1);
   while(1) {
 
-    ofdm_last_symbol = ofdmflexframegen_write(ofdm_fg, ofdm_symbol_buffer, (OFDM_M+CP_LEN) );
-    pluto_transmit(ofdm_symbol_buffer, (OFDM_M+CP_LEN), do_dump_rx, ofdm_last_symbol); 
+    ofdm_last_symbol = ofdmflexframegen_write(ofdm_fg, ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20 );
+    pluto_transmit(ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20, do_dump_rx, ofdm_last_symbol); 
 
     if(ofdm_last_symbol) {
       elapsed = timer_elapsed_usec(timer1);
