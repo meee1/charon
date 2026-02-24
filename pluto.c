@@ -27,6 +27,7 @@
 #include <complex.h>
 #include <unistd.h>
 #include <math.h>
+#include <errno.h>
 
 #include "liquid/liquid.h"
 #include "filters/pluto/pluto_filters.h"
@@ -435,7 +436,9 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 int pluto_receive() {
 
   if(p_dat == p_end || !more_data) {
-    n_rx = iio_buffer_refill(rxbuf)/4;
+    ssize_t nbytes = iio_buffer_refill(rxbuf);
+    if(nbytes == -EAGAIN || nbytes < 0) return 0;
+    n_rx = nbytes/4;
     p_dat = iio_buffer_first(rxbuf,rx0_i);
     p_end = iio_buffer_end(rxbuf);
     more_data=1;
