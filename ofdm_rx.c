@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
+#include <math.h>
 #include <sys/time.h>
 #include <complex.h>
 #include "liquid/liquid.h"
