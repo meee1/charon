@@ -73,6 +73,15 @@
 // Reference ZC sequence (time domain, complex baseband)
 static float complex pss_ref[PSS_ZC_LEN];
 
+// Precomputed per-hypothesis, per-sample rotation×reference table.
+//
+// pss_rot_ref[hi][n] = exp(-j·2π·h·PSS_FREQ_STEP·n) · conj(pss_ref[n])
+//   where h = hi - PSS_HALF_HYPO  (so hi=0 → h=-3, hi=3 → h=0, hi=6 → h=+3)
+//
+// Filled once in pss_sync_init(); used in pss_sync_execute() to avoid
+// recomputing cosf/sinf/conjf on every incoming sample.
+static float complex pss_rot_ref[PSS_N_HYPOTHESES][PSS_ZC_LEN];
+
 // Circular input-sample buffer
 static float complex pss_buf[PSS_ZC_LEN];
 static int           pss_buf_idx;
@@ -104,7 +113,21 @@ static void pss_gen_zc(float complex *seq, int N, int u)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void pss_sync_init(void)
 {
+    int hi, n;
+
     pss_gen_zc(pss_ref, PSS_ZC_LEN, PSS_ZC_ROOT);
+
+    // Precompute pss_rot_ref[hi][n] = exp(-j·2π·h·PSS_FREQ_STEP·n) · conj(pss_ref[n])
+    // for each hypothesis index hi (h = hi - PSS_HALF_HYPO) and sample n.
+    for (hi = 0; hi < PSS_N_HYPOTHESES; hi++) {
+        int h = hi - PSS_HALF_HYPO;
+        for (n = 0; n < PSS_ZC_LEN; n++) {
+            float phase = -2.0f * (float)M_PI * (float)h * PSS_FREQ_STEP * (float)n;
+            float complex rot = cosf(phase) + _Complex_I * sinf(phase);
+            pss_rot_ref[hi][n] = rot * conjf(pss_ref[n]);
+        }
+    }
+
     memset(pss_buf, 0, sizeof(pss_buf));
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
@@ -155,19 +178,14 @@ int pss_sync_execute(float complex sample)
     // Test each frequency-offset hypothesis h = -PSS_HALF_HYPO .. +PSS_HALF_HYPO
     for (h = -PSS_HALF_HYPO; h <= PSS_HALF_HYPO; h++) {
         float complex corr = 0.0f + 0.0f * _Complex_I;
+        int hi = h + PSS_HALF_HYPO;   // table row index (0 .. PSS_N_HYPOTHESES-1)
 
         for (n = 0; n < PSS_ZC_LEN; n++) {
             // Read chronologically-ordered sample from circular buffer
             int idx = (pss_buf_idx + n) % PSS_ZC_LEN;
-            float complex s = pss_buf[idx];
 
-            // Down-convert by hypothesis h: multiply by exp(-j*2*pi*h*n/M)
-            // After this rotation the signal is at baseband if h == true_offset*M
-            float phase = -2.0f * (float)M_PI * (float)h * PSS_FREQ_STEP * (float)n;
-            float complex rot = cosf(phase) + _Complex_I * sinf(phase);
-
-            // Cross-correlate frequency-shifted sample against reference PSS
-            corr += (s * rot) * conjf(pss_ref[n]);
+            // Multiply by precomputed rot*conj(ref): no trig evaluation needed
+            corr += pss_buf[idx] * pss_rot_ref[hi][n];
         }
 
         // Normalized correlation magnitude (0 = no match, 1 = perfect match)

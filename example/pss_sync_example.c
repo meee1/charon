@@ -71,10 +71,13 @@ static float randn(void)
 
 // ---------------------------------------------------------------------------
 // PSS correlator: test PSS_N_HYPOTHESES CFO hypotheses on a buffer of
-// PSS_ZC_LEN samples.  Returns the best normalized correlation and sets
-// *best_h to the winning hypothesis index.
+// PSS_ZC_LEN samples using precomputed rot_ref tables.
+// Returns the best normalized correlation and sets *best_h to the winning
+// hypothesis index.
+// rot_ref[hi][n] = exp(-j·2π·h·PSS_FREQ_STEP·n) · conj(ref[n])  (precomputed)
 // ---------------------------------------------------------------------------
-static float pss_correlate(const float complex *buf, const float complex *ref,
+static float pss_correlate(const float complex *buf,
+                            float complex rot_ref[PSS_N_HYPOTHESES][PSS_ZC_LEN],
                             int *best_h_out)
 {
     int h, n;
@@ -89,11 +92,9 @@ static float pss_correlate(const float complex *buf, const float complex *ref,
 
     for (h = -PSS_HALF_HYPO; h <= PSS_HALF_HYPO; h++) {
         float complex corr = 0.0f + 0.0f * _Complex_I;
-        for (n = 0; n < PSS_ZC_LEN; n++) {
-            float phase = -2.0f * (float)M_PI * (float)h * PSS_FREQ_STEP * (float)n;
-            float complex rot = cosf(phase) + _Complex_I * sinf(phase);
-            corr += (buf[n] * rot) * conjf(ref[n]);
-        }
+        int hi = h + PSS_HALF_HYPO;
+        for (n = 0; n < PSS_ZC_LEN; n++)
+            corr += buf[n] * rot_ref[hi][n];
         float corr_mag = cabsf(corr) / sqrtf(rx_power * (float)PSS_ZC_LEN);
         if (corr_mag > best_corr) {
             best_corr = corr_mag;
@@ -108,9 +109,12 @@ static float pss_correlate(const float complex *buf, const float complex *ref,
 // ---------------------------------------------------------------------------
 // Run one test: apply cfo_offset (in subcarrier spacings) to the PSS
 // preamble, add AWGN at snr_db, then run the sliding-window correlator.
+// rot_ref is the precomputed rotation×reference table.
 // Returns 1 if the correct hypothesis is found, 0 otherwise.
 // ---------------------------------------------------------------------------
-static int run_test(float complex *pss_ref, int applied_h, float snr_db,
+static int run_test(float complex *pss_ref,
+                    float complex rot_ref[PSS_N_HYPOTHESES][PSS_ZC_LEN],
+                    int applied_h, float snr_db,
                     int verbose)
 {
     // Build PSS preamble (PSS_TX_REPS copies)
@@ -144,7 +148,7 @@ static int run_test(float complex *pss_ref, int applied_h, float snr_db,
     float complex window[PSS_ZC_LEN];
     for (n = 0; n <= preamble_len - PSS_ZC_LEN; n++) {
         memcpy(window, preamble + n, PSS_ZC_LEN * sizeof(float complex));
-        float corr = pss_correlate(window, pss_ref, &h);
+        float corr = pss_correlate(window, rot_ref, &h);
         if (corr > peak_corr) {
             peak_corr  = corr;
             detected_h = h;
@@ -166,18 +170,13 @@ static int run_test(float complex *pss_ref, int applied_h, float snr_db,
                    PSS_ZC_LEN * sizeof(float complex));
             printf("  Per-hypothesis correlations:\n");
             for (h = -PSS_HALF_HYPO; h <= PSS_HALF_HYPO; h++) {
-                float complex buf_h[PSS_ZC_LEN];
+                int hi = h + PSS_HALF_HYPO;
                 float rx_power = 0.0f;
-                for (int i = 0; i < PSS_ZC_LEN; i++) {
-                    buf_h[i] = window[i];
-                    rx_power += crealf(buf_h[i] * conjf(buf_h[i]));
-                }
+                for (int i = 0; i < PSS_ZC_LEN; i++)
+                    rx_power += crealf(window[i] * conjf(window[i]));
                 float complex corr_c = 0.0f + 0.0f * _Complex_I;
-                for (int i = 0; i < PSS_ZC_LEN; i++) {
-                    float phase = -2.0f*(float)M_PI*(float)h*PSS_FREQ_STEP*(float)i;
-                    float complex rot = cosf(phase) + _Complex_I*sinf(phase);
-                    corr_c += (buf_h[i] * rot) * conjf(pss_ref[i]);
-                }
+                for (int i = 0; i < PSS_ZC_LEN; i++)
+                    corr_c += window[i] * rot_ref[hi][i];
                 float cm = (rx_power > 1e-12f) ?
                     cabsf(corr_c) / sqrtf(rx_power * (float)PSS_ZC_LEN) : 0.0f;
                 printf("    h=%+d: corr=%.4f%s\n", h, cm,
@@ -216,6 +215,22 @@ int main(void)
     float complex pss_ref[PSS_ZC_LEN];
     pss_gen_zc(pss_ref, PSS_ZC_LEN, PSS_ZC_ROOT);
 
+    // Precompute rotation×reference table once (avoids trig in the correlator hot-path).
+    // rot_ref[hi][n] = exp(-j·2π·h·PSS_FREQ_STEP·n) · conj(pss_ref[n])
+    // where h = hi - PSS_HALF_HYPO.
+    float complex rot_ref[PSS_N_HYPOTHESES][PSS_ZC_LEN];
+    {
+        int hi, n;
+        for (hi = 0; hi < PSS_N_HYPOTHESES; hi++) {
+            int h = hi - PSS_HALF_HYPO;
+            for (n = 0; n < PSS_ZC_LEN; n++) {
+                float phase = -2.0f * (float)M_PI * (float)h * PSS_FREQ_STEP * (float)n;
+                float complex rot = cosf(phase) + _Complex_I * sinf(phase);
+                rot_ref[hi][n] = rot * conjf(pss_ref[n]);
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Detailed single-test output
     // -----------------------------------------------------------------------
@@ -224,7 +239,7 @@ int main(void)
 
     printf("--- Detailed test: applied CFO = %+d subcarrier spacings, SNR = %.0f dB ---\n\n",
            applied_h, snr_db);
-    run_test(pss_ref, applied_h, snr_db, 1 /*verbose*/);
+    run_test(pss_ref, rot_ref, applied_h, snr_db, 1 /*verbose*/);
 
     // -----------------------------------------------------------------------
     // Sweep all in-range hypotheses at several SNRs
@@ -245,7 +260,7 @@ int main(void)
     for (h = -PSS_HALF_HYPO; h <= PSS_HALF_HYPO; h++) {
         printf("  h=%+2d sc ", h);
         for (int si = 0; si < n_snrs; si++) {
-            int ok = run_test(pss_ref, h, snrs[si], 0 /*quiet*/);
+            int ok = run_test(pss_ref, rot_ref, h, snrs[si], 0 /*quiet*/);
             printf(" %s        ", ok ? "PASS" : "FAIL");
         }
         printf("\n");
@@ -257,7 +272,7 @@ int main(void)
     pass = 0; total = 0;
     printf("\n--- Summary at 20 dB SNR ---\n");
     for (h = -PSS_HALF_HYPO; h <= PSS_HALF_HYPO; h++) {
-        int ok = run_test(pss_ref, h, 20.0f, 0);
+        int ok = run_test(pss_ref, rot_ref, h, 20.0f, 0);
         pass += ok; total++;
         printf("  h=%+d: %s\n", h, ok ? "PASS" : "FAIL");
     }
