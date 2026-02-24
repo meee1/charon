@@ -37,6 +37,7 @@
 #include "pluto.h"
 #include "ethernet.h"
 #include "tap_device.h"
+#include "pss_sync.h"
 
 static unsigned int ofdm_M;
 static unsigned int ofdm_cp_len;
@@ -150,6 +151,28 @@ int do_ofdm_tx( uint8_t *buffer, int len, int is_retrans, int do_dump_rx, int is
 
 do_send:
   timer_reset(timer1);
+
+  // Transmit PSS preamble (LTE-style Zadoff-Chu sequence with multiple
+  // frequency offset hypotheses on the receiver side).  This allows the
+  // remote receiver to acquire coarse CFO before the OFDM PLCP kicks in.
+  // The PSS (PSS_TX_MAX_SAMPLES = 126 samples) is sent in OFDM_M+CP_LEN
+  // chunks because pluto_transmit() operates at that hardware buffer
+  // granularity; the final chunk is zero-padded to fill the slot.
+  {
+    static float complex pss_buf[PSS_TX_MAX_SAMPLES];
+    static float complex pss_chunk[OFDM_M + CP_LEN];
+    int pss_len = 0;
+    int pi;
+    pss_sync_get_tx_samples(pss_buf, &pss_len);
+    for (pi = 0; pi < pss_len; pi += (OFDM_M + CP_LEN)) {
+      int chunk = pss_len - pi;
+      if (chunk > OFDM_M + CP_LEN) chunk = OFDM_M + CP_LEN;
+      memset(pss_chunk, 0, sizeof(pss_chunk));
+      memcpy(pss_chunk, pss_buf + pi, chunk * sizeof(float complex));
+      pluto_transmit(pss_chunk, (OFDM_M + CP_LEN), 0, 0);
+    }
+  }
+
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, ofdm_payload, tlen);
   elapsed = timer_elapsed_usec(timer1);
 

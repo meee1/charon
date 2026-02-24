@@ -1,6 +1,7 @@
 # Compiled binaries
 ofdm_loopback_example
 ofdm_file_transfer
+pss_sync_example
 
 # Object files
 *.o

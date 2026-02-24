@@ -69,6 +69,16 @@ rm -f test_small.txt received_small.txt
 rm -f test_large.bin received_large.bin
 
 echo ""
+echo "Test 4: PSS Sync (LTE-style with multiple frequency offset hypotheses)"
+echo "-----------------------------------------------------------------------"
+if ./pss_sync_example; then
+    echo "✓ PSS sync test PASSED"
+else
+    echo "✗ PSS sync test FAILED"
+    exit 1
+fi
+
+echo ""
 echo "=================================="
 echo "✓ All tests PASSED!"
 echo "=================================="
@@ -77,4 +87,5 @@ echo "Examples are working correctly."
 echo "Try running them individually:"
 echo "  ./ofdm_loopback_example"
 echo "  ./ofdm_file_transfer myfile.txt output.txt"
+echo "  ./pss_sync_example"
 echo ""
