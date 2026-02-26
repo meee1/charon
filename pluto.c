@@ -92,6 +92,9 @@ long long pluto_current_gain;
 long long current_rx_freq;
 long long current_sample_freq;
 
+static FILE *tx_save_fp = NULL;
+static FILE *rx_load_fp = NULL;
+
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 struct iio_context * pluto_init_txrx() {
@@ -443,6 +446,50 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+void pluto_tx_save_open(const char *path) {
+  if(tx_save_fp) fclose(tx_save_fp);
+  tx_save_fp = fopen(path, "wb");
+  if(!tx_save_fp) {
+    fprintf(stderr, "\n[pluto] ERROR: could not open TX save file: %s", path);
+  } else {
+    fprintf(stderr, "\n[pluto] saving TX samples to: %s", path);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_tx_save_close(void) {
+  if(tx_save_fp) {
+    fclose(tx_save_fp);
+    tx_save_fp = NULL;
+    fprintf(stderr, "\n[pluto] TX save file closed");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_rx_load_open(const char *path) {
+  if(rx_load_fp) fclose(rx_load_fp);
+  rx_load_fp = fopen(path, "rb");
+  if(!rx_load_fp) {
+    fprintf(stderr, "\n[pluto] ERROR: could not open RX load file: %s", path);
+  } else {
+    fprintf(stderr, "\n[pluto] loading RX samples from: %s", path);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_rx_load_close(void) {
+  if(rx_load_fp) {
+    fclose(rx_load_fp);
+    rx_load_fp = NULL;
+    fprintf(stderr, "\n[pluto] RX load file closed");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 {
 
@@ -460,6 +507,10 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 
       ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( buffer[ii] )*8192.0));  //scale to work well for OFDM waveforms
       ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( buffer[ii] )*8192.0));
+
+      if(tx_save_fp) {
+        fwrite(tx_p_dat, sizeof(int16_t), 2, tx_save_fp);
+      }
 
       tx_p_dat += tx_p_inc;
 
@@ -483,9 +534,11 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
         tx_p_dat += tx_p_inc;
       }
 
-      more_tx_data=0;      
+      more_tx_data=0;
       iio_buffer_push(txbuf); //send out the last symbol to the dma
       fprintf(stderr, "\n[pluto] TX: pushing final buffer and flushing RX");
+
+      if(tx_save_fp) fflush(tx_save_fp);
 
       while( iio_buffer_refill(rxbuf) > 0); //flush the rx buffer
     }
@@ -499,6 +552,18 @@ int pluto_receive() {
 
   static long long rx_sample_count = 0;
   static struct timeval rx_stat_tv = {0, 0};
+
+  if(rx_load_fp) {
+    int16_t file_buf[1400 * 2];
+    size_t samples_read = fread(file_buf, sizeof(int16_t) * 2, 1400, rx_load_fp);
+    if(samples_read == 0) {
+      fprintf(stderr, "\n[pluto] RX load file: EOF reached");
+      pluto_rx_load_close();
+      return 0;
+    }
+    do_process_iq16_batch(file_buf, (int)samples_read);
+    return 0;
+  }
 
   if(p_dat == p_end || !more_data) {
     ssize_t nbytes = iio_buffer_refill(rxbuf);

@@ -56,6 +56,8 @@
 
 static int do_loopback_test = 0;
 static int tx_active = 0;
+static char *save_tx_path = NULL;
+static char *load_rx_path = NULL;
 
 static int max_retrans;
 
@@ -155,13 +157,21 @@ int main (int argc, char **argv) {
   int opt;
   static struct option long_options[] = {
     {"loopback-test", no_argument, 0, 'T'},
+    {"save-tx", required_argument, 0, 's'},
+    {"load-rx", required_argument, 0, 'l'},
     {0, 0, 0, 0}
   };
 
-  while ((opt = getopt_long(argc, argv, "T", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "Ts:l:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'T':
         do_loopback_test = 1;
+        break;
+      case 's':
+        save_tx_path = optarg;
+        break;
+      case 'l':
+        load_rx_path = optarg;
         break;
     }
   }
@@ -176,6 +186,9 @@ int main (int argc, char **argv) {
 
   pluto_init_txrx();
   pluto_set_enable_tx( 1 );
+
+  if(save_tx_path) pluto_tx_save_open(save_tx_path);
+  if(load_rx_path) pluto_rx_load_open(load_rx_path);
 
   init_ofdm_rx();
   init_ofdm_tx();
