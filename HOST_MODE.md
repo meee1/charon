@@ -1,6 +1,21 @@
-# Charon Host Mode
+# Charon Host Mode — Remote PlutoSDR via IIO
 
-This is a host-architecture build of Charon that replaces PlutoSDR hardware access with UDP socket interfaces for testing and development.
+This is an x86_64 host build of Charon that controls a remote PlutoSDR over the network using libiio. All RF hardware functions (AD9361 configuration, IQ streaming, gain control, AGC, frequency tuning) operate identically to the on-device build — the only difference is that IIO commands travel over the network instead of the local bus.
+
+## Prerequisites
+
+Install libiio and libad9361 development libraries on the host:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libiio-dev libad9361-dev
+
+# Or build from source:
+# https://github.com/analogdevicesinc/libiio
+# https://github.com/analogdevicesinc/libad9361-iio
+```
+
+Also required (same as on-device build): liquid-dsp, fftw3, libfec, libtuntap.
 
 ## Building
 
@@ -8,99 +23,95 @@ This is a host-architecture build of Charon that replaces PlutoSDR hardware acce
 make host
 ```
 
-This creates the `charon-host` binary for x86-64/ARM64 host systems.
+This creates the `charon-host` binary for x86_64 host systems.
 
-## Architecture
+## Connecting to a Remote PlutoSDR
 
-The host build uses `pluto_host.c` instead of `pluto.c`, replacing libiio/AD9361 hardware calls with UDP sockets:
+The host build connects to a PlutoSDR over the network via libiio's network backend. The PlutoSDR must be reachable and running its IIO daemon (iiod), which is enabled by default on PlutoSDR firmware.
 
-- **TX Socket**: Port 5002 - Sends OFDM baseband IQ samples (int16_t pairs) via UDP
-- **RX Socket**: Port 5002 - Receives OFDM baseband IQ samples (int16_t pairs) for demodulation via UDP
+### Specify the PlutoSDR URI
 
-Both sockets operate in non-blocking mode. The TX destination is automatically learned from the first RX packet source address.
+Use the `--uri` command line option:
 
-Samples are at the OFDM baseband rate (equivalent to 1.4 MHz) — there is no software FIR interpolation/decimation stage. External sources should send samples at the OFDM baseband rate directly.
+```bash
+sudo ./charon-host --uri ip:192.168.2.1
+```
+
+Or set the `PLUTO_URI` environment variable:
+
+```bash
+export PLUTO_URI=ip:192.168.2.1
+sudo ./charon-host
+```
+
+Priority order: `--uri` flag > `PLUTO_URI` env var > default (`ip:192.168.2.1`).
+
+### URI Formats
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `ip:` | `ip:192.168.2.1` | Network (default PlutoSDR USB-Ethernet IP) |
+| `ip:` | `ip:pluto.local` | Network with mDNS hostname |
+| `usb:` | `usb:1.2.3` | USB (if PlutoSDR is connected directly) |
 
 ## Usage
 
-1. Start charon-host (requires root for TAP device creation):
-   ```bash
-   sudo ./charon-host
-   ```
-
-2. Connect external RF hardware or simulation:
-   - Send IQ samples TO localhost:5002 (RX socket)
-   - Receive IQ samples FROM localhost:5001 (TX socket)
-
-The system automatically learns the TX destination from the first packet received on the RX socket.
-
-## Sample Flow
-
-### Transmit Path
-```
-TAP device → OFDM modulator → UDP port 5002
-```
-
-### Receive Path
-```
-UDP port 5002 → OFDM demodulator → TAP device
-```
-
-## Integration with SDR Hardware
-
-You can connect this to GNU Radio, SDR++, or custom applications. Since there is no longer a software FIR stage, the external source/sink operates at the OFDM baseband rate (1.4 MHz equivalent). An external SDR application must handle any interpolation/decimation needed for its hardware sample rate.
-
-### Example GNU Radio Flowgraph
-```
-UDP Source (port 5002) → Complex to Float → Interpolate (8x) → PlutoSDR Sink (11.2 MSPS)
-PlutoSDR Source (11.2 MSPS) → Decimate (8x) → Float to Complex → UDP Sink (localhost:5002)
-```
-
-### Example Python UDP Client
-```python
-import socket
-import struct
-
-# Create UDP sockets
-tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-rx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-# Send samples to charon RX (port 5002)
-while True:
-    i_sample, q_sample = get_samples_from_sdr()
-    packet = struct.pack('hh', i_sample, q_sample)
-    rx_sock.sendto(packet, ('localhost', 5002))
-
-# Receive samples from charon TX (port 5001)
-tx_sock.bind(('', 5001))
-while True:
-    data, addr = tx_sock.recvfrom(4)  # 2x int16
-    i_sample, q_sample = struct.unpack('hh', data)
-    send_to_sdr(i_sample, q_sample)
-```
-
-### Simple Loopback Test
 ```bash
-# Terminal 1: Start charon-host
+# Default: connect to PlutoSDR at 192.168.2.1
 sudo ./charon-host
 
-# Terminal 2: Create loopback with netcat
-nc -u localhost 5002 | nc -u localhost 5001
+# Specify PlutoSDR IP
+sudo ./charon-host --uri ip:192.168.2.1
+
+# With TX sample recording
+sudo ./charon-host --uri ip:192.168.2.1 --save-tx /tmp/tx_samples.bin
+
+# With RX sample playback
+sudo ./charon-host --uri ip:10.0.0.50 --load-rx /tmp/rx_samples.bin
 ```
 
-## Differences from PlutoSDR Build
+Root is required for TAP device creation (ofdm0).
 
-- No hardware AGC (simulated gain control)
-- No frequency offset correction
-- No hardware filters
-- Sample rate configuration ignored (use external SDR settings)
-- Transmit power control no-op
+## Verify Connectivity
 
-All OFDM modulation/demodulation, FEC, and network stack integration remain identical to the PlutoSDR version.
+Before running charon-host, verify the PlutoSDR is reachable:
 
-## Development Use Cases
+```bash
+# Check IIO context
+iio_info -u ip:192.168.2.1
 
-- Test OFDM PHY layer without PlutoSDR hardware
-- Prototype changes using software-defined radios
-- Integrate with RF simulation environments
-- Debug protocol logic with loopback connections
+# Ping the device
+ping 192.168.2.1
+```
+
+## Architecture
+
+```
+Host x86_64                          PlutoSDR
+┌──────────────┐     libiio/network  ┌──────────────┐
+│ charon-host  │ ◄────────────────► │ iiod         │
+│              │     IQ + control    │ AD9361       │
+│ OFDM TX/RX  │                     │ RF front-end │
+│ MAC layer    │                     └──────────────┘
+│ TAP device   │
+│ batman-adv   │
+└──────────────┘
+```
+
+The host runs the full Charon stack (OFDM modulation/demodulation, MAC layer, TAP device, batman-adv mesh routing) while the PlutoSDR handles RF — exactly as if Charon were running on the PlutoSDR itself, but with the processing offloaded to the host.
+
+## Differences from On-Device Build
+
+- IIO context is created via `iio_create_context_from_uri()` instead of `iio_create_local_context()`
+- Network latency adds to TX/RX round-trip time (USB-Ethernet: negligible; WiFi: may affect timing)
+- All hardware control (gain, frequency, AGC, filters) works identically over the network
+- Same OFDM parameters, same MAC layer, same mesh networking
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `failed to create IIO context` | Check PlutoSDR is powered and reachable (`ping 192.168.2.1`) |
+| `Could not create RX buffer` | Another process may hold the IIO context — restart PlutoSDR or kill conflicting processes |
+| `ad9361-phy device: (nil)` | IIO daemon not running on PlutoSDR, or wrong URI |
+| High latency / dropped frames | Use USB-Ethernet connection instead of WiFi for lowest latency |
