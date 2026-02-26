@@ -352,7 +352,7 @@ void pluto_set_in_sample_freq(long long sfreq) {
 
     {
       unsigned long rate = (unsigned long)sfreq;
-      unsigned long fpass = rate / 2;
+      unsigned long fpass = rate;
       unsigned long fstop = fpass * 5 / 4;
       unsigned long wnom = rate;
       ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
@@ -519,7 +519,7 @@ int pluto_receive() {
     if(n_rx == 0) {
       more_data = (p_dat != p_end) ? 1 : 0;
     }
-  } else if (n_rx > 0) {
+  } else {
     for ( ;p_dat < p_end; p_dat += p_inc) {
       do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] );
       rx_sample_count++;

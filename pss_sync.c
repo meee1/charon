@@ -63,6 +63,9 @@
 // Number of PSS repetitions to transmit as preamble
 #define PSS_TX_REPS         2
 
+// After detection, skip this many samples before re-arming the correlator
+#define PSS_LOCKOUT_SAMPLES (PSS_ZC_LEN * 4000)
+
 // One subcarrier spacing in normalized frequency (cycles/sample)
 #define PSS_FREQ_STEP       (1.0f / (float)OFDM_M)
 
@@ -89,6 +92,9 @@ static int           pss_buf_idx;
 // Results from the last pss_sync_execute() call
 static float pss_cfo_est;    // estimated CFO in normalized cycles/sample
 static float pss_peak_corr;  // normalized correlation of the best hypothesis
+
+// Lockout counter: when >0, pss_sync_execute() skips correlation and decrements
+static int pss_lockout;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -133,6 +139,7 @@ void pss_sync_init(void)
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
     pss_peak_corr = 0.0f;
+    pss_lockout  = 0;
     fprintf(stderr, "\n[pss_sync] init complete, ref[0]=(%.4f,%.4f) ref[1]=(%.4f,%.4f)",
             crealf(pss_ref[0]), cimagf(pss_ref[0]), crealf(pss_ref[1]), cimagf(pss_ref[1]));
 }
@@ -146,6 +153,7 @@ void pss_sync_reset(void)
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
     pss_peak_corr = 0.0f;
+    pss_lockout  = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -166,6 +174,12 @@ int pss_sync_execute(float complex sample)
     int h, n;
     float best_corr = 0.0f;
     int   best_h    = 0;
+
+    // After a successful detection, skip correlation for a cooldown period
+    if (pss_lockout > 0) {
+        pss_lockout--;
+        return 0;
+    }
 
     // Append new sample to circular buffer
     pss_buf[pss_buf_idx] = sample;
@@ -203,12 +217,22 @@ int pss_sync_execute(float complex sample)
 
     pss_peak_corr = best_corr;
 
+    {
+        static int dbg_counter = 0;
+        if (++dbg_counter >= 100000) {
+            fprintf(stderr, "\n[pss_sync] noise floor: best_corr=%.4f best_h=%d rx_pwr=%.4f",
+                    best_corr, best_h, rx_power);
+            dbg_counter = 0;
+        }
+    }
+
     if (best_corr >= PSS_CORR_THRESH) {
         // CFO estimate: the offset that was removed by the best hypothesis
         // equals best_h subcarrier spacings = best_h / OFDM_M cycles/sample
         pss_cfo_est = (float)best_h * PSS_FREQ_STEP;
-        fprintf(stderr, "\n[pss_sync] DETECTED: corr=%.4f hypo=%d cfo=%.6f cyc/samp rx_pwr=%.2f",
-                best_corr, best_h, pss_cfo_est, rx_power);
+        pss_lockout = PSS_LOCKOUT_SAMPLES;
+        fprintf(stderr, "\n[pss_sync] DETECTED: corr=%.4f hypo=%d cfo=%.6f cyc/samp rx_pwr=%.2f (lockout %d)",
+                best_corr, best_h, pss_cfo_est, rx_power, pss_lockout);
         return 1;
     }
 
