@@ -43,6 +43,7 @@
 #include "timers.h"
 #include "config.h"
 
+#define XO_BASE_HZ 40000000LL
 #define DEFAULT_PLUTO_URI "ip:192.168.2.1"
 
 struct iio_buffer {
@@ -97,6 +98,8 @@ static int more_tx_data;
 long long pluto_current_gain;
 long long current_rx_freq;
 long long current_sample_freq;
+
+static long long current_xo_correction = XO_BASE_HZ;
 
 static FILE *tx_save_fp = NULL;
 static FILE *rx_load_fp = NULL;
@@ -173,6 +176,8 @@ struct iio_context * pluto_init_txrx() {
       fprintf(stderr, "\n[pluto-host] HW RX bandwidth: %lld Hz, TX bandwidth: %lld Hz", hw_rx_bw, hw_tx_bw);
       fprintf(stderr, "\n[pluto-host] HW RX LO: %lld Hz, TX LO: %lld Hz", hw_rx_lo, hw_tx_lo);
     }
+
+    pluto_init_xo_correction();
 
     fprintf(stderr, "\n[pluto-host] setting initial TX gain to -80 dB");
     pluto_set_out_gain( -80 );
@@ -462,6 +467,44 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
     pluto_set_out_gain( -80 );
   }
 
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_init_xo_correction(void) {
+  if (iio_device_attr_read_longlong(phy, "xo_correction", &current_xo_correction) == 0) {
+    fprintf(stderr, "\n[pluto-host] initial xo_correction: %lld Hz", current_xo_correction);
+  } else {
+    current_xo_correction = XO_BASE_HZ;
+    fprintf(stderr, "\n[pluto-host] could not read xo_correction, using default %lld Hz", current_xo_correction);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+long long pluto_get_xo_correction(void) {
+  return current_xo_correction;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_set_xo_correction(long long xo_hz) {
+  current_xo_correction = xo_hz;
+  iio_device_attr_write_longlong(phy, "xo_correction", xo_hz);
+  fprintf(stderr, "\n[pluto-host] set xo_correction: %lld Hz", xo_hz);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
+  double cfo_hz = (double)cfo_cycles_per_sample * (double)sample_freq_hz;
+  double xo_delta = cfo_hz * ((double)XO_BASE_HZ / (double)freq_rxtx_hz);
+  long long new_xo = current_xo_correction - (long long)round(xo_delta);
+
+  fprintf(stderr, "\n[pluto-host] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
+          cfo_hz, xo_delta, new_xo, current_xo_correction);
+
+  pluto_set_xo_correction(new_xo);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////

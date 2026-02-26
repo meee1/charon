@@ -380,11 +380,16 @@ void do_ofdm_rx(float complex sample) {
   // While the frame-synchronizer is hunting for the PLCP preamble, run the
   // PSS correlator in parallel.  If a PSS preamble is detected the estimated
   // CFO is applied to the inner NCO so that the subsequent PLCP sync has a
-  // better frequency starting point.
+  // better frequency starting point.  When the CFO is nonzero, also adjust
+  // the AD9361 xo_correction (40 MHz base clock) so the hardware LO and
+  // sample rates converge toward the correct values.
   if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
     if (pss_sync_execute(sample)) {
       float cfo = pss_sync_get_freq_offset();   // cycles/sample
       nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
+      if (cfo != 0.0f) {
+        pluto_apply_pss_xo_correction(cfo);
+      }
       fprintf(stderr, "\nPSS: detected CFO=%.6f rad/samp (hyp %+d sc, peak=%.3f)",
               2.0f * (float)M_PI * cfo,
               (int)(cfo * (float)OFDM_M + (cfo >= 0.0f ? 0.5f : -0.5f)),
