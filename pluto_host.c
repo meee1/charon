@@ -20,21 +20,21 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-// Host version - uses TCP sockets instead of PlutoSDR hardware
+// Host version - uses libiio network context to a remote PlutoSDR
 
+#include <iio.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <complex.h>
 #include <unistd.h>
 #include <math.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
 #include <errno.h>
-  
+#include <sys/time.h>
+
 #include "liquid/liquid.h"
+#include "filters/pluto/pluto_filters.h"
+#include "ad9361.h"
 
 #include "pluto.h"
 #include "charon.h"
@@ -43,255 +43,425 @@
 #include "timers.h"
 #include "config.h"
 
-// UDP socket configuration
-#define TX_DEST_IP "127.0.0.1"  // Destination for TX packets
-#define TX_DEST_PORT 5002
-#define RX_BIND_IP "127.0.0.1"  // Listen address for RX
-#define RX_BIND_PORT 5002
+#define DEFAULT_PLUTO_URI "ip:192.168.2.1"
 
-static int tx_sock_fd = -1;
-static int rx_sock_fd = -1;
-static struct sockaddr_in tx_dest_addr;
-static struct sockaddr_in rx_src_addr;
-static socklen_t rx_addr_len;
-static int tx_dest_valid = 0;
+struct iio_buffer {
+    const struct iio_device *dev;
+    void *buffer, *userdata;
+    size_t length, data_length;
 
+    uint32_t *mask;
+    unsigned int dev_sample_size;
+    unsigned int sample_size;
+    bool is_output, dev_is_high_speed;
+};
+
+extern char *pluto_uri;
+
+static struct iio_device *phy;
+static struct iio_device *tx_dev;
+static struct iio_device *rx_dev;
+static struct iio_channel *tx0_i, *tx0_q;
+static struct iio_channel *rx0_i, *rx0_q;
+
+// cached phy channel pointers (avoid repeated iio_device_find_channel lookups)
+static struct iio_channel *phy_voltage0_in;   // phy "voltage0" input (RX)
+static struct iio_channel *phy_voltage0_out;  // phy "voltage0" output (TX)
+static struct iio_channel *phy_altvoltage0;   // phy "altvoltage0" output (RX LO)
+static struct iio_channel *phy_altvoltage1;   // phy "altvoltage1" output (TX LO)
+
+static struct iio_buffer *rxbuf;
+static void *p_dat, *p_end;
+static ptrdiff_t p_inc;
 static int pluto_rx_initialized=0;
+
+static struct iio_buffer *txbuf;
+static char *tx_p_dat, *tx_p_end;
+static ptrdiff_t tx_p_inc;
 static int pluto_tx_initialized=0;
+
 static int tx_enabled=0;
 
 static int llen;
 static int ii=0;
+static int n_rx;
+
+static long long prev_gain;
 
 int rx_timeout;
+static struct iio_context *ctx;
+static long long rssi;
+static int more_data;
+static int more_tx_data;
 
 long long pluto_current_gain;
 long long current_rx_freq;
 long long current_sample_freq;
 
-static int16_t rx_buffer[16384];  // Larger buffer for UDP packets
-static int ofdm_initialized = 0;
-
 static FILE *tx_save_fp = NULL;
 static FILE *rx_load_fp = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////////////
-// Socket helper functions
-///////////////////////////////////////////////////////////////////////////////////////
-static int create_rx_udp_socket(const char *ip, int port) {
-    int sock_fd;
-    struct sockaddr_in addr;
-    int opt = 1;
-
-    sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock_fd < 0) {
-        perror("UDP socket creation failed");
-        return -1;
-    }
-
-    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        perror("setsockopt failed");
-        close(sock_fd);
-        return -1;
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-        fprintf(stderr, "Invalid IP address: %s\n", ip);
-        close(sock_fd);
-        return -1;
-    }
-    addr.sin_port = htons(port);
-
-    if (bind(sock_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind failed");
-        close(sock_fd);
-        return -1;
-    }
-
-    // Set non-blocking
-    int flags = fcntl(sock_fd, F_GETFL, 0);
-    fcntl(sock_fd, F_SETFL, flags | O_NONBLOCK);
-
-    return sock_fd;
-}
-
-static int create_tx_udp_socket(void) {
-    int sock_fd;
-    int opt = 1;
-
-    sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock_fd < 0) {
-        perror("UDP socket creation failed");
-        return -1;
-    }
-
-    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        perror("setsockopt failed");
-        close(sock_fd);
-        return -1;
-    }
-
-    // Set non-blocking
-    int flags = fcntl(sock_fd, F_GETFL, 0);
-    fcntl(sock_fd, F_SETFL, flags | O_NONBLOCK);
-
-    return sock_fd;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 struct iio_context * pluto_init_txrx() {
-    
-    fprintf(stderr, "\nInitializing host mode with UDP sockets...");
 
-    // Create TX UDP socket (unbound, for sending only)
-    tx_sock_fd = create_tx_udp_socket();
-    if (tx_sock_fd < 0) {
-        fprintf(stderr, "\nFailed to create TX UDP socket");
-        exit(1);
+    const char *uri = NULL;
+
+    // priority: --uri command line, then PLUTO_URI env var, then default
+    if (pluto_uri && pluto_uri[0]) {
+        uri = pluto_uri;
+    } else {
+        uri = getenv("PLUTO_URI");
+        if (!uri || !uri[0]) {
+            uri = DEFAULT_PLUTO_URI;
+        }
     }
 
-    // Set up TX destination address
-    memset(&tx_dest_addr, 0, sizeof(tx_dest_addr));
-    tx_dest_addr.sin_family = AF_INET;
-    if (inet_pton(AF_INET, TX_DEST_IP, &tx_dest_addr.sin_addr) <= 0) {
-        fprintf(stderr, "\nInvalid TX destination IP: %s", TX_DEST_IP);
+    fprintf(stderr, "\n[pluto-host] creating network IIO context: %s ...", uri);
+    ctx = iio_create_context_from_uri(uri);
+    if (!ctx) {
+        fprintf(stderr, "\n[pluto-host] ERROR: failed to create IIO context for %s", uri);
+        fprintf(stderr, "\n[pluto-host] make sure PlutoSDR is reachable and iio daemon is running");
         exit(1);
+    } else {
+        fprintf(stderr, "\n[pluto-host] IIO context created successfully");
     }
-    tx_dest_addr.sin_port = htons(TX_DEST_PORT);
-    tx_dest_valid = 1;
-    fprintf(stderr, "\nTX will send to %s:%d", TX_DEST_IP, TX_DEST_PORT);
 
-    // Create RX UDP socket (bound to listen for incoming packets)
-    rx_sock_fd = create_rx_udp_socket(RX_BIND_IP, RX_BIND_PORT);
-    if (rx_sock_fd < 0) {
-        fprintf(stderr, "\nFailed to create RX UDP socket on %s:%d", RX_BIND_IP, RX_BIND_PORT);
-        exit(1);
+    phy = iio_context_find_device(ctx, "ad9361-phy");
+    fprintf(stderr, "\n[pluto-host] ad9361-phy device: %p", (void*)phy);
+
+    // cache phy channel pointers once at init
+    phy_voltage0_in  = iio_device_find_channel(phy, "voltage0", false);
+    phy_voltage0_out = iio_device_find_channel(phy, "voltage0", true);
+    phy_altvoltage0  = iio_device_find_channel(phy, "altvoltage0", true);
+    phy_altvoltage1  = iio_device_find_channel(phy, "altvoltage1", true);
+
+    tx_dev = iio_context_find_device(ctx, "cf-ad9361-dds-core-lpc");
+    rx_dev = iio_context_find_device(ctx, "cf-ad9361-lpc");
+    fprintf(stderr, "\n[pluto-host] tx_dev: %p, rx_dev: %p", (void*)tx_dev, (void*)rx_dev);
+
+    rx0_i = iio_device_find_channel(rx_dev, "voltage0", 0);
+    rx0_q = iio_device_find_channel(rx_dev, "voltage1", 0);
+    fprintf(stderr, "\n[pluto-host] RX channels: I=%p Q=%p", (void*)rx0_i, (void*)rx0_q);
+    iio_channel_enable(rx0_i);
+    iio_channel_enable(rx0_q);
+
+    tx0_i = iio_device_find_channel(tx_dev, "voltage0", 1);
+    tx0_q = iio_device_find_channel(tx_dev, "voltage1", 1);
+    fprintf(stderr, "\n[pluto-host] TX channels: I=%p Q=%p", (void*)tx0_i, (void*)tx0_q);
+    iio_channel_enable(tx0_i);
+    iio_channel_enable(tx0_q);
+
+    {
+      unsigned long rate = (unsigned long)sample_freq_hz;
+      unsigned long fpass = rate;            // passband edge at full sample rate
+      unsigned long fstop = fpass * 5 / 4;  // stopband 25% beyond passband
+      unsigned long wnom = rate;             // analog filter at full sample rate
+      fprintf(stderr, "\n[pluto-host] setting bb rate custom filter manual: rate=%lu Fpass=%lu Fstop=%lu wnom_tx=%lu wnom_rx=%lu",
+              rate, fpass, fstop, wnom, wnom);
+      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
     }
-    fprintf(stderr, "\nRX UDP socket listening on %s:%d", RX_BIND_IP, RX_BIND_PORT);
 
-    rx_addr_len = sizeof(rx_src_addr);
-    
-    pluto_tx_initialized = 1;
-    pluto_rx_initialized = 1;
-    
-    pluto_current_gain = 50;
-    current_sample_freq = sample_freq_hz;
-    
-    ofdm_initialized = 1;
-    
-    fprintf(stderr, "\nHost mode initialization complete");
-    
-    return NULL; // No real iio context in host mode
+    {
+      long long hw_sfreq = 0, hw_rx_bw = 0, hw_tx_bw = 0, hw_rx_lo = 0, hw_tx_lo = 0;
+      iio_channel_attr_read_longlong(phy_voltage0_in, "sampling_frequency", &hw_sfreq);
+      iio_channel_attr_read_longlong(phy_voltage0_in, "rf_bandwidth", &hw_rx_bw);
+      iio_channel_attr_read_longlong(phy_voltage0_out, "rf_bandwidth", &hw_tx_bw);
+      iio_channel_attr_read_longlong(phy_altvoltage0, "frequency", &hw_rx_lo);
+      iio_channel_attr_read_longlong(phy_altvoltage1, "frequency", &hw_tx_lo);
+      fprintf(stderr, "\n[pluto-host] HW sample rate: %lld Hz", hw_sfreq);
+      fprintf(stderr, "\n[pluto-host] HW RX bandwidth: %lld Hz, TX bandwidth: %lld Hz", hw_rx_bw, hw_tx_bw);
+      fprintf(stderr, "\n[pluto-host] HW RX LO: %lld Hz, TX LO: %lld Hz", hw_rx_lo, hw_tx_lo);
+    }
+
+    fprintf(stderr, "\n[pluto-host] setting initial TX gain to -80 dB");
+    pluto_set_out_gain( -80 );
+
+    iio_channel_attr_write(
+        phy_voltage0_in,
+        "gain_control_mode",
+        "fast_attack");
+
+    iio_channel_attr_write_longlong(
+        phy_voltage0_in,
+        "hardwaregain",
+        73);
+
+
+    //RX Buffer
+    if(!pluto_rx_initialized) {
+      fprintf(stderr, "\n[pluto-host] creating RX buffer (1400 samples)...");
+      rxbuf = iio_device_create_buffer(rx_dev, 1400, false);
+
+
+      if (!rxbuf) {
+          perror("Could not create RX buffer");
+          exit(0);
+      }
+
+      pluto_rx_initialized=1;
+      iio_buffer_set_blocking_mode(rxbuf,false);
+
+      p_inc = iio_buffer_step(rxbuf);
+      fprintf(stderr, "\n[pluto-host] RX buffer created, step=%td", p_inc);
+     }
+
+    //TX Buffer
+    if(!pluto_tx_initialized) {
+
+      fprintf(stderr, "\n[pluto-host] creating TX buffer (%d samples)...", (OFDM_M+CP_LEN+TAPER_LEN)*22);
+      txbuf = iio_device_create_buffer(tx_dev, (OFDM_M+CP_LEN+TAPER_LEN)*22, false);
+
+      if (!txbuf) {
+          perror("Could not create TX buffer");
+          exit(0);
+      }
+
+      iio_buffer_set_blocking_mode(txbuf,true);
+      pluto_tx_initialized=1;
+
+      tx_p_inc = iio_buffer_step(txbuf);  //no need to init this every loop
+      fprintf(stderr, "\n[pluto-host] TX buffer created, step=%td", tx_p_inc);
+
+    }
+
+    fprintf(stderr, "\n[pluto-host] init complete (remote SDR at %s)", uri);
+
+    return ctx;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_filter() {
-    // No-op in host mode
+  fprintf(stderr, "\n[pluto-host] loading FIR filter (%d bytes)", LTE1p4_MHz_ftr_len);
+  iio_device_attr_write_raw( phy,
+        "filter_fir_config",
+        LTE1p4_MHz_ftr,
+        LTE1p4_MHz_ftr_len);
 }
-
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_enable_fir(int enable) {
-    // No-op in host mode
+  fprintf(stderr, "\n[pluto-host] FIR enable=%d", enable);
+  ad9361_set_trx_fir_enable(phy, enable);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 long long pluto_get_in_gain(void) {
-    return pluto_current_gain;
-}
 
+  long long gain_val=72;
+
+    iio_channel_attr_read_longlong(
+        phy_voltage0_in,
+      "hardwaregain",
+      &gain_val);
+
+  return gain_val;
+}
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_gain_auto_fast(void) {
-    // No-op in host mode
+
+    fprintf(stderr, "\n[pluto-host] setting AGC mode: fast_attack");
+    iio_channel_attr_write(
+        phy_voltage0_in,
+        "gain_control_mode",
+        "fast_attack");
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 long long pluto_get_in_rssi(void) {
-    return -50; // Simulated RSSI
-}
 
+  rssi=-110;
+
+    iio_channel_attr_read_longlong(
+        phy_voltage0_in,
+      "rssi",
+      &rssi);
+
+  return -rssi;
+}
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void enable_rx() {
-    // No-op in host mode
-}
 
+  fprintf(stderr, "\n[pluto-host] enabling RX at %lld Hz", current_rx_freq);
+  iio_channel_attr_write_longlong(
+      phy_altvoltage0,
+      "frequency",
+      current_rx_freq);
+}
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void disable_rx() {
-    // No-op in host mode
+
+  fprintf(stderr, "\n[pluto-host] disabling RX (detuning +20 MHz from %lld Hz)", current_rx_freq);
+  prev_gain = pluto_get_in_gain();
+
+  iio_channel_attr_write_longlong(
+      phy_altvoltage0,
+      "frequency",
+      current_rx_freq+20000000 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_bump_agc_down(int delta) {
-    pluto_current_gain += delta;
-    if (pluto_current_gain > 73) pluto_current_gain = 73;
+  fprintf(stderr, "\n[pluto-host] bumping AGC down by %d", delta);
+  pluto_set_in_gain( pluto_get_in_gain()+delta );
 }
-
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_bump_agc_up(int delta) {
-    pluto_current_gain += delta;
-    if (pluto_current_gain > 73) pluto_current_gain = 73;
+  fprintf(stderr, "\n[pluto-host] bumping AGC up by %d", delta);
+  pluto_set_in_gain( pluto_get_in_gain()+delta );
 }
-
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_gain(long long gain) {
-    if(gain < 6) gain = 6;
-    if(gain > 73) gain = 73;
-    pluto_current_gain = gain;
+
+    if(gain<6) gain = 6;
+    if(gain>73) gain = 73;
+
+    fprintf(stderr, "\n[pluto-host] setting RX gain: %lld dB (manual)", gain);
+    iio_channel_attr_write(
+        phy_voltage0_in,
+        "gain_control_mode",
+        "manual");
+
+    iio_channel_attr_write_longlong(
+        phy_voltage0_in,
+        "hardwaregain",
+        gain);
+
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_out_bw(long long chbw) {
-    // No-op in host mode
+
+    fprintf(stderr, "\n[pluto-host] setting TX bandwidth: %lld Hz", chbw);
+    iio_channel_attr_write_longlong(
+        phy_voltage0_out,
+        "rf_bandwidth",
+        chbw);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_bw(long long chbw) {
-    // No-op in host mode
-}
 
+    fprintf(stderr, "\n[pluto-host] setting RX bandwidth: %lld Hz", chbw);
+    iio_channel_attr_write_longlong(
+        phy_voltage0_in,
+        "rf_bandwidth",
+        chbw);
+
+    pluto_set_out_bw( chbw );
+}
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_in_sample_freq(long long sfreq) {
+
+    fprintf(stderr, "\n[pluto-host] setting sample freq: %lld Hz", sfreq);
+    iio_channel_attr_write_longlong(
+        phy_voltage0_in,
+        "sampling_frequency",
+        sfreq);
+
+    {
+      unsigned long rate = (unsigned long)sfreq;
+      unsigned long fpass = rate;
+      unsigned long fstop = fpass * 5 / 4;
+      unsigned long wnom = rate;
+      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+    }
+
     current_sample_freq = sfreq;
+    fprintf(stderr, "\n[pluto-host] sample freq set to %lld Hz", current_sample_freq);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_out_gain(long long gain) {
-    // No-op in host mode
+
+  fprintf(stderr, "\n[pluto-host] setting TX gain: %lld dB", gain);
+  iio_channel_attr_write_longlong(
+      phy_voltage0_out,
+      "hardwaregain",
+      gain);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_tx_freq(long long freq_tx_hz) {
-    // No-op in host mode
-}
 
+  //NOTE: offset correction is done in set_rx_freq!!!!
+
+  fprintf(stderr, "\n[pluto-host] setting TX LO freq: %lld Hz", freq_tx_hz);
+  iio_channel_attr_write_longlong(
+      phy_altvoltage1,
+      "frequency",
+      (long long)freq_tx_hz);   //tx lo freq
+
+}
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
-void pluto_set_enable_tx(int enable) {
-    tx_enabled = enable;
+void pluto_set_enable_tx( int enable) {
+  fprintf(stderr, "\n[pluto-host] TX enable=%d", enable);
+  tx_enabled = enable;
+
+  if(tx_enabled==0) {
+    fprintf(stderr, "\n[pluto-host] TX disabled, parking TX LO and muting gain");
+    pluto_set_tx_freq(5999000000);
+    pluto_set_out_gain( -80 );
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_rx_freq(long long freq_rx_hz) {
-    current_rx_freq = freq_rx_hz;
-    fprintf(stderr, "\nHost mode: simulating rx_freq %lld", freq_rx_hz);
+
+  int in_range = 0;
+  if( freq_rx_hz > 902200000L && freq_rx_hz < 927800000 ) in_range=1;
+  if( freq_rx_hz > 2412200000L && freq_rx_hz < 2461800000 ) in_range=1;
+
+  if(!in_range) {
+    fprintf(stderr, "\nwarning tx/rx freq out of ISM range. setting to default");
+    freq_rx_hz = 915000000;
+  }
+
+  long long offset_hz = (long long) ( (freq_rx_hz/1e6) * ref_correction_ppm );
+  fprintf(stderr, "\nfreq correction hz:  %lld", offset_hz );
+
+  current_rx_freq = (long long)freq_rx_hz + offset_hz;   //rx lo freq
+
+  iio_channel_attr_read_longlong(
+        phy_voltage0_in,
+        "sampling_frequency",
+        &current_sample_freq);
+
+
+  iio_channel_attr_write_longlong(
+      phy_altvoltage0,
+      "frequency",
+      current_rx_freq );
+
+  fprintf(stderr, "\nsetting rx_freq %lld", current_rx_freq);
+  fprintf(stderr, "\nsetting tx_freq %lld", current_rx_freq);
+
+  if(tx_enabled) {
+    pluto_set_tx_freq(current_rx_freq);
+  }
+  else {
+    pluto_set_tx_freq(5999000000);
+    pluto_set_out_gain( -80 );
+  }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -300,9 +470,9 @@ void pluto_tx_save_open(const char *path) {
   if(tx_save_fp) fclose(tx_save_fp);
   tx_save_fp = fopen(path, "wb");
   if(!tx_save_fp) {
-    fprintf(stderr, "\n[pluto] ERROR: could not open TX save file: %s", path);
+    fprintf(stderr, "\n[pluto-host] ERROR: could not open TX save file: %s", path);
   } else {
-    fprintf(stderr, "\n[pluto] saving TX samples to: %s", path);
+    fprintf(stderr, "\n[pluto-host] saving TX samples to: %s", path);
   }
 }
 
@@ -312,7 +482,7 @@ void pluto_tx_save_close(void) {
   if(tx_save_fp) {
     fclose(tx_save_fp);
     tx_save_fp = NULL;
-    fprintf(stderr, "\n[pluto] TX save file closed");
+    fprintf(stderr, "\n[pluto-host] TX save file closed");
   }
 }
 
@@ -322,9 +492,9 @@ void pluto_rx_load_open(const char *path) {
   if(rx_load_fp) fclose(rx_load_fp);
   rx_load_fp = fopen(path, "rb");
   if(!rx_load_fp) {
-    fprintf(stderr, "\n[pluto] ERROR: could not open RX load file: %s", path);
+    fprintf(stderr, "\n[pluto-host] ERROR: could not open RX load file: %s", path);
   } else {
-    fprintf(stderr, "\n[pluto] loading RX samples from: %s", path);
+    fprintf(stderr, "\n[pluto-host] loading RX samples from: %s", path);
   }
 }
 
@@ -334,7 +504,7 @@ void pluto_rx_load_close(void) {
   if(rx_load_fp) {
     fclose(rx_load_fp);
     rx_load_fp = NULL;
-    fprintf(stderr, "\n[pluto] RX load file closed");
+    fprintf(stderr, "\n[pluto-host] RX load file closed");
   }
 }
 
@@ -342,83 +512,125 @@ void pluto_rx_load_close(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 {
-    if (tx_sock_fd < 0) {
-        return 0; // Socket not initialized
-    }
-
-    // If we don't have a destination yet, can't transmit
-    if (!tx_dest_valid) {
-        return 0;
-    }
 
     llen = len;
+    fprintf(stderr, "\n[pluto-host] TX: len=%d is_last=%d dump_rx=%d", len, is_last, do_dump_rx);
 
-    static int16_t tx_buffer[16384];
-    int buf_idx = 0;
+    if(more_tx_data==0) {
+      tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
+      tx_p_end = (char *) iio_buffer_end(txbuf);
+      more_tx_data=1;
+    }
+
 
     for(ii=0; ii<llen; ii++) {
-        tx_buffer[buf_idx++] = (int16_t)(creal(buffer[ii]) * 8192.0);
-        tx_buffer[buf_idx++] = (int16_t)(cimag(buffer[ii]) * 8192.0);
+
+      ((int16_t*)tx_p_dat)[0] = ((const int16_t) (creal( buffer[ii] )*8192.0));  //scale to work well for OFDM waveforms
+      ((int16_t*)tx_p_dat)[1] = ((const int16_t) (cimag( buffer[ii] )*8192.0));
+
+      if(tx_save_fp) {
+        fwrite(tx_p_dat, sizeof(int16_t), 2, tx_save_fp);
+      }
+
+      tx_p_dat += tx_p_inc;
+
+      if(tx_p_dat == tx_p_end) {
+        iio_buffer_push(txbuf);
+        fprintf(stderr, "\n[pluto-host] TX: pushing intermitant buffer");
+        tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
+        tx_p_end = (char *) iio_buffer_end(txbuf);
+        more_tx_data=1;
+      }
+
     }
 
-    // Send all interpolated data in one UDP packet
-    ssize_t sent = sendto(tx_sock_fd, tx_buffer, buf_idx * sizeof(int16_t), 0,
-                         (struct sockaddr *)&tx_dest_addr, sizeof(tx_dest_addr));
-    if (sent < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            fprintf(stderr, "\nTX UDP sendto error: %s", strerror(errno));
-        }
+    if(is_last) {
+
+      //zero pad the remaining buffer before final push
+      fprintf(stderr, "\n[pluto-host] TX: zero padding final buffer, %td bytes to end of buffer", (tx_p_end - tx_p_dat)/tx_p_inc);
+      while(tx_p_dat != tx_p_end) {
+        ((int16_t*)tx_p_dat)[0] = 0;
+        ((int16_t*)tx_p_dat)[1] = 0;
+        tx_p_dat += tx_p_inc;
+      }
+
+      more_tx_data=0;
+      iio_buffer_push(txbuf); //send out the last symbol to the dma
+      fprintf(stderr, "\n[pluto-host] TX: pushing final buffer and flushing RX");
+
+      if(tx_save_fp) fflush(tx_save_fp);
+
+      while( iio_buffer_refill(rxbuf) > 0); //flush the rx buffer
     }
 
-    if(tx_save_fp) {
-        fwrite(tx_buffer, sizeof(int16_t), buf_idx, tx_save_fp);
-        fflush(tx_save_fp);
-    }
-
-    return 0;
+  return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 int pluto_receive() {
-    if(rx_load_fp) {
-        int16_t file_buf[1400 * 2];
-        size_t samples_read = fread(file_buf, sizeof(int16_t) * 2, 1400, rx_load_fp);
-        if(samples_read == 0) {
-            fprintf(stderr, "\n[pluto] RX load file: EOF reached");
-            pluto_rx_load_close();
-            return 0;
-        }
-        do_process_iq16_batch(file_buf, (int)samples_read);
-        return 0;
-    }
 
-    if (rx_sock_fd < 0) {
-        return 0; // Socket not initialized
-    }
+  static long long rx_sample_count = 0;
+  static struct timeval rx_stat_tv = {0, 0};
 
-    if (!ofdm_initialized) {
-        return 0; // OFDM not ready yet
+  if(rx_load_fp) {
+    int16_t file_buf[1400 * 2];
+    size_t samples_read = fread(file_buf, sizeof(int16_t) * 2, 1400, rx_load_fp);
+    if(samples_read == 0) {
+      fprintf(stderr, "\n[pluto-host] RX load file: EOF reached");
+      pluto_rx_load_close();
+      return 0;
     }
-
-    // Read samples from UDP socket
-    ssize_t bytes_read = recvfrom(rx_sock_fd, rx_buffer, sizeof(rx_buffer),
-                                  MSG_DONTWAIT, (struct sockaddr *)&rx_src_addr, &rx_addr_len);
-    
-    if (bytes_read < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            fprintf(stderr, "\nRX UDP recvfrom error: %s", strerror(errno));
-        }
-        return 0;
-    }
-    
-    if (bytes_read == 0 || bytes_read < 4) {
-        return 0; // Need at least one I/Q pair
-    }
-
-    int samples_read = bytes_read / sizeof(int16_t) / 2;  // I/Q pairs
-
-    do_process_iq16_batch(rx_buffer, samples_read);
-    
+    do_process_iq16_batch(file_buf, (int)samples_read);
     return 0;
+  }
+
+  if(p_dat == p_end || !more_data) {
+    ssize_t nbytes = iio_buffer_refill(rxbuf);
+    if(nbytes == -EAGAIN || nbytes < 0) return 0;
+    n_rx = nbytes/4;
+    p_dat = iio_buffer_first(rxbuf,rx0_i);
+    p_end = iio_buffer_end(rxbuf);
+    more_data=1;
+  }
+
+  if(false && p_inc == 4 && n_rx > 0) {
+    // fast path: samples are contiguous int16 IQ pairs
+    int avail = (p_end - p_dat) / 4;
+    if(avail > n_rx) avail = n_rx;
+    do_process_iq16_batch((const int16_t*)p_dat, avail);
+    p_dat += avail * 4;
+    n_rx -= avail;
+    if(n_rx == 0) {
+      more_data = (p_dat != p_end) ? 1 : 0;
+    }
+  } else {
+    for ( ;p_dat < p_end; p_dat += p_inc) {
+      do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] );
+      rx_sample_count++;
+      if(--n_rx==0) {
+        more_data = (p_dat!=p_end) ? 1 : 0;
+        break;
+      }
+    }
+  }
+
+
+
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  if(rx_stat_tv.tv_sec == 0) {
+    rx_stat_tv = now;
+  } else {
+    long long elapsed_us = (now.tv_sec - rx_stat_tv.tv_sec) * 1000000LL
+                         + (now.tv_usec - rx_stat_tv.tv_usec);
+    if(elapsed_us >= 1000000LL) {
+      double sps = (double)rx_sample_count / ((double)elapsed_us / 1e6);
+      fprintf(stderr, "\n[pluto-host] RX: %.0f samples/sec", sps);
+      rx_sample_count = 0;
+      rx_stat_tv = now;
+    }
+  }
+
+  return 0;
 }

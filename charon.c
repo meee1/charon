@@ -58,6 +58,7 @@ static int do_loopback_test = 0;
 static int tx_active = 0;
 static char *save_tx_path = NULL;
 static char *load_rx_path = NULL;
+char *pluto_uri = NULL;
 
 static int max_retrans;
 
@@ -159,10 +160,11 @@ int main (int argc, char **argv) {
     {"loopback-test", no_argument, 0, 'T'},
     {"save-tx", required_argument, 0, 's'},
     {"load-rx", required_argument, 0, 'l'},
+    {"uri", required_argument, 0, 'u'},
     {0, 0, 0, 0}
   };
 
-  while ((opt = getopt_long(argc, argv, "Ts:l:", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "Ts:l:u:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'T':
         do_loopback_test = 1;
@@ -172,6 +174,9 @@ int main (int argc, char **argv) {
         break;
       case 'l':
         load_rx_path = optarg;
+        break;
+      case 'u':
+        pluto_uri = optarg;
         break;
     }
   }

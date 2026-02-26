@@ -2,7 +2,7 @@ NAME = charon-host
 SUFFIX ?= .c
 DIRS ?= .
 
-# Exclude pluto.c from build, use pluto_host.c instead
+# Exclude pluto.c from build, use pluto_host.c instead (remote IIO)
 EXCLUDE_SRC = pluto.c
 
 # Host architecture build - no cross-compilation
