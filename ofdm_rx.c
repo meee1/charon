@@ -389,6 +389,9 @@ void do_ofdm_rx(float complex sample) {
       nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
       if (cfo != 0.0f) {
         pluto_apply_pss_xo_correction(cfo);
+        // XO correction has absorbed the CFO into the hardware clock —
+        // reset the internal NCO so it doesn't double-correct.
+        nco_crcf_set_frequency(_qq->nco_rx, 0.0f);
       }
       fprintf(stderr, "\nPSS: detected CFO=%.6f rad/samp (hyp %+d sc, peak=%.3f)",
               2.0f * (float)M_PI * cfo,
