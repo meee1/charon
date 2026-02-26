@@ -1,4 +1,8 @@
 /* This file was automatically generated.  Do not edit! */
+void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample);
+void pluto_set_xo_correction(long long xo_hz);
+long long pluto_get_xo_correction(void);
+void pluto_init_xo_correction(void);
 void pluto_rx_load_close(void);
 void pluto_rx_load_open(const char *path);
 void pluto_tx_save_close(void);
