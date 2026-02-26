@@ -72,6 +72,9 @@ long long current_sample_freq;
 static int16_t rx_buffer[16384];  // Larger buffer for UDP packets
 static int ofdm_initialized = 0;
 
+static FILE *tx_save_fp = NULL;
+static FILE *rx_load_fp = NULL;
+
 ///////////////////////////////////////////////////////////////////////////////////////
 // Socket helper functions
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -293,6 +296,50 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+void pluto_tx_save_open(const char *path) {
+  if(tx_save_fp) fclose(tx_save_fp);
+  tx_save_fp = fopen(path, "wb");
+  if(!tx_save_fp) {
+    fprintf(stderr, "\n[pluto] ERROR: could not open TX save file: %s", path);
+  } else {
+    fprintf(stderr, "\n[pluto] saving TX samples to: %s", path);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_tx_save_close(void) {
+  if(tx_save_fp) {
+    fclose(tx_save_fp);
+    tx_save_fp = NULL;
+    fprintf(stderr, "\n[pluto] TX save file closed");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_rx_load_open(const char *path) {
+  if(rx_load_fp) fclose(rx_load_fp);
+  rx_load_fp = fopen(path, "rb");
+  if(!rx_load_fp) {
+    fprintf(stderr, "\n[pluto] ERROR: could not open RX load file: %s", path);
+  } else {
+    fprintf(stderr, "\n[pluto] loading RX samples from: %s", path);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_rx_load_close(void) {
+  if(rx_load_fp) {
+    fclose(rx_load_fp);
+    rx_load_fp = NULL;
+    fprintf(stderr, "\n[pluto] RX load file closed");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 {
     if (tx_sock_fd < 0) {
@@ -323,20 +370,37 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
         }
     }
 
+    if(tx_save_fp) {
+        fwrite(tx_buffer, sizeof(int16_t), buf_idx, tx_save_fp);
+        fflush(tx_save_fp);
+    }
+
     return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 int pluto_receive() {
+    if(rx_load_fp) {
+        int16_t file_buf[1400 * 2];
+        size_t samples_read = fread(file_buf, sizeof(int16_t) * 2, 1400, rx_load_fp);
+        if(samples_read == 0) {
+            fprintf(stderr, "\n[pluto] RX load file: EOF reached");
+            pluto_rx_load_close();
+            return 0;
+        }
+        do_process_iq16_batch(file_buf, (int)samples_read);
+        return 0;
+    }
+
     if (rx_sock_fd < 0) {
         return 0; // Socket not initialized
     }
-    
+
     if (!ofdm_initialized) {
         return 0; // OFDM not ready yet
     }
-    
+
     // Read samples from UDP socket
     ssize_t bytes_read = recvfrom(rx_sock_fd, rx_buffer, sizeof(rx_buffer),
                                   MSG_DONTWAIT, (struct sockaddr *)&rx_src_addr, &rx_addr_len);

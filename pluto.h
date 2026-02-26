@@ -1,4 +1,8 @@
 /* This file was automatically generated.  Do not edit! */
+void pluto_rx_load_close(void);
+void pluto_rx_load_open(const char *path);
+void pluto_tx_save_close(void);
+void pluto_tx_save_open(const char *path);
 int pluto_receive();
 int pluto_transmit(float complex *buffer,int len,int do_dump_rx,int is_last);
 void pluto_set_rx_freq(long long freq_rx_hz);
