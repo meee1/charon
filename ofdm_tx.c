@@ -44,7 +44,7 @@ static unsigned int ofdm_cp_len;
 static unsigned int ofdm_taper_len;
 static unsigned int ofdm_payload_len;
 
-static float complex ofdm_symbol_buffer[(OFDM_M + CP_LEN)*10];   // time-domain buffer
+static float complex ofdm_symbol_buffer[(OFDM_M + CP_LEN)*20];   // time-domain buffer
 static unsigned char ofdm_header[8];            // header data
 static unsigned char ofdm_payload[32*1024]; 
 static unsigned char ofdm_p[OFDM_M];                 // subcarrier allocation (null/pilot/data)

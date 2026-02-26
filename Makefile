@@ -84,6 +84,12 @@ else
 	@$(COMPILER) $^ $(LDFLAGS) -o $@
 endif
 
+# Compile glibc_compat.c without -flto so the __wrap_ symbols survive to the linker
+$(OUT_DIR)/glibc_compat.o: glibc_compat.c
+	@mkdir -p $(dir $@)
+	@echo $(COMPILER) $(CXXFLAGS) $(filter-out -flto,$(FLAGS)) -MMD -MP -fPIC -c $< -o $@
+	@$(COMPILER) $(CXXFLAGS) $(filter-out -flto,$(FLAGS)) -MMD -MP -fPIC -c $< -o $@
+
 $(OUT_DIR)/%.o: %$(SUFFIX)
 	@mkdir -p $(dir $@)
 	@echo $(COMPILER) $(CXXFLAGS) $(FLAGS) -MMD -MP -fPIC -c $< -o $@

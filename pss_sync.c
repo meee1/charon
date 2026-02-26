@@ -64,7 +64,7 @@
 #define PSS_TX_REPS         2
 
 // After detection, skip this many samples before re-arming the correlator
-#define PSS_LOCKOUT_SAMPLES (PSS_ZC_LEN * 4000)
+#define PSS_LOCKOUT_SAMPLES (PSS_ZC_LEN * 80000)
 
 // One subcarrier spacing in normalized frequency (cycles/sample)
 #define PSS_FREQ_STEP       (1.0f / (float)OFDM_M)

@@ -275,13 +275,13 @@ void enable_rx() {
 ///////////////////////////////////////////////////////////////////////////////////////
 void disable_rx() {
 
-  fprintf(stderr, "\n[pluto] disabling RX (detuning +2 MHz from %lld Hz)", current_rx_freq);
+  fprintf(stderr, "\n[pluto] disabling RX (detuning +20 MHz from %lld Hz)", current_rx_freq);
   prev_gain = pluto_get_in_gain();
 
   iio_channel_attr_write_longlong(
       phy_altvoltage0,
       "frequency",
-      current_rx_freq+2000000 );
+      current_rx_freq+20000000 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////

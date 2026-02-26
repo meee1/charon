@@ -55,6 +55,7 @@
 
 
 static int do_loopback_test = 0;
+static int tx_active = 0;
 
 static int max_retrans;
 
@@ -217,6 +218,7 @@ void do_send_ack(uint8_t *ack_mac) {
 
   memcpy(mac_to_ack, ack_mac, 6);
 
+  tx_active = 1;
   disable_rx();
 
   pluto_set_out_gain( tx_output_power_minus_dbm );
@@ -227,6 +229,8 @@ void do_send_ack(uint8_t *ack_mac) {
   pluto_set_out_gain( -80 );
 
   enable_rx();
+  ofdm_rx_reset();
+  tx_active = 0;
   usleep(200);
 
   fprintf(stderr, "\nSENT ACK TO ->%02x:%02x:%02x:%02x:%02x:%02x",
@@ -269,6 +273,7 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
    } 
  }
 
+ tx_active = 1;
  disable_rx();
 
  pluto_set_out_gain( tx_output_power_minus_dbm );
@@ -282,6 +287,8 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
 
   pluto_set_out_gain( -80 );
   enable_rx();
+  ofdm_rx_reset();
+  tx_active = 0;
   usleep(200);
 
 
@@ -433,6 +440,8 @@ void main_loop(void) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_process_iq16(const int16_t i, const int16_t q) {
 
+  if(tx_active) return;
+
   IF = ((float) i) * (1.0f/32768.0f);
   QF = ((float) q) * (1.0f/32768.0f);
   sample = (float complex) (IF + _Complex_I * QF);
@@ -449,6 +458,8 @@ void do_process_iq16(const int16_t i, const int16_t q) {
 static float complex iq_batch[IQ_BATCH_SIZE];
 
 void do_process_iq16_batch(const int16_t *buf, int count) {
+
+  if(tx_active) return;
 
   while(count > 0) {
     int n = (count > IQ_BATCH_SIZE) ? IQ_BATCH_SIZE : count;
