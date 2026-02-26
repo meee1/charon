@@ -38,6 +38,7 @@
 #include <string.h>
 #include <math.h>
 #include <complex.h>
+#include <sys/time.h>
 
 #include "ofdm_conf.h"
 #include "pss_sync.h"
@@ -63,8 +64,8 @@
 // Number of PSS repetitions to transmit as preamble
 #define PSS_TX_REPS         2
 
-// After detection, skip this many samples before re-arming the correlator
-#define PSS_LOCKOUT_SAMPLES (PSS_ZC_LEN * 80000)
+// Lockout duration after detection (seconds)
+#define PSS_LOCKOUT_SEC     10
 
 // One subcarrier spacing in normalized frequency (cycles/sample)
 #define PSS_FREQ_STEP       (1.0f / (float)OFDM_M)
@@ -93,8 +94,10 @@ static int           pss_buf_idx;
 static float pss_cfo_est;    // estimated CFO in normalized cycles/sample
 static float pss_peak_corr;  // normalized correlation of the best hypothesis
 
-// Lockout counter: when >0, pss_sync_execute() skips correlation and decrements
-static int pss_lockout;
+// Lockout timestamp: when non-zero, pss_sync_execute() skips correlation
+// until PSS_LOCKOUT_SEC seconds have elapsed since detection
+static struct timeval pss_lockout_tv;
+static int pss_lockout_active;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -139,7 +142,8 @@ void pss_sync_init(void)
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
     pss_peak_corr = 0.0f;
-    pss_lockout  = 0;
+    pss_lockout_active = 0;
+    memset(&pss_lockout_tv, 0, sizeof(pss_lockout_tv));
     fprintf(stderr, "\n[pss_sync] init complete, ref[0]=(%.4f,%.4f) ref[1]=(%.4f,%.4f)",
             crealf(pss_ref[0]), cimagf(pss_ref[0]), crealf(pss_ref[1]), cimagf(pss_ref[1]));
 }
@@ -153,7 +157,8 @@ void pss_sync_reset(void)
     pss_buf_idx  = 0;
     pss_cfo_est  = 0.0f;
     pss_peak_corr = 0.0f;
-    pss_lockout  = 0;
+    pss_lockout_active = 0;
+    memset(&pss_lockout_tv, 0, sizeof(pss_lockout_tv));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -176,9 +181,14 @@ int pss_sync_execute(float complex sample)
     int   best_h    = 0;
 
     // After a successful detection, skip correlation for a cooldown period
-    if (pss_lockout > 0) {
-        pss_lockout--;
-        return 0;
+    if (pss_lockout_active) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        long long elapsed = (now.tv_sec - pss_lockout_tv.tv_sec) * 1000000LL
+                          + (now.tv_usec - pss_lockout_tv.tv_usec);
+        if (elapsed < PSS_LOCKOUT_SEC * 1000000LL)
+            return 0;
+        pss_lockout_active = 0;
     }
 
     // Append new sample to circular buffer
@@ -230,9 +240,10 @@ int pss_sync_execute(float complex sample)
         // CFO estimate: the offset that was removed by the best hypothesis
         // equals best_h subcarrier spacings = best_h / OFDM_M cycles/sample
         pss_cfo_est = (float)best_h * PSS_FREQ_STEP;
-        pss_lockout = PSS_LOCKOUT_SAMPLES;
-        fprintf(stderr, "\n[pss_sync] DETECTED: corr=%.4f hypo=%d cfo=%.6f cyc/samp rx_pwr=%.2f (lockout %d)",
-                best_corr, best_h, pss_cfo_est, rx_power, pss_lockout);
+        gettimeofday(&pss_lockout_tv, NULL);
+        pss_lockout_active = 1;
+        fprintf(stderr, "\n[pss_sync] DETECTED: corr=%.4f hypo=%d cfo=%.6f cyc/samp rx_pwr=%.2f (lockout %ds)",
+                best_corr, best_h, pss_cfo_est, rx_power, PSS_LOCKOUT_SEC);
         return 1;
     }
 

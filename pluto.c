@@ -489,6 +489,7 @@ void pluto_rx_load_close(void) {
     fclose(rx_load_fp);
     rx_load_fp = NULL;
     fprintf(stderr, "\n[pluto] RX load file closed");
+    exit(0);
   }
 }
 
