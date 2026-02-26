@@ -139,7 +139,9 @@ struct iio_context * pluto_init_txrx() {
       unsigned long wnom = rate;             // analog filter at full sample rate
       fprintf(stderr, "\n[pluto] setting bb rate custom filter manual: rate=%lu Fpass=%lu Fstop=%lu wnom_tx=%lu wnom_rx=%lu",
               rate, fpass, fstop, wnom, wnom);
-      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+      int ret = ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+      if (ret < 0)
+        fprintf(stderr, "\n[pluto] ERROR: ad9361_set_bb_rate_custom_filter_manual failed: %d", ret);
     }
 
     {
@@ -358,7 +360,9 @@ void pluto_set_in_sample_freq(long long sfreq) {
       unsigned long fpass = rate;
       unsigned long fstop = fpass * 5 / 4;
       unsigned long wnom = rate;
-      ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+      int ret = ad9361_set_bb_rate_custom_filter_manual(phy, rate, fpass, fstop, wnom, wnom);
+      if (ret < 0)
+        fprintf(stderr, "\n[pluto] ERROR: ad9361_set_bb_rate_custom_filter_manual failed: %d", ret);
     }
 
     current_sample_freq = sfreq;
