@@ -48,3 +48,4 @@ Module.symvers
 Mkfile.old
 dkms.conf
 _codeql_detected_source_root
+third_party/
