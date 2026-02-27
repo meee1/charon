@@ -489,7 +489,7 @@ void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
   fprintf(stderr, "\n[pluto] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
           cfo_hz, xo_delta, new_xo, current_xo_correction);
 
-  pluto_set_xo_correction(new_xo);
+  pluto_set_xo_correction(new_xo * 0.1 + current_xo_correction * 0.9);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -543,7 +543,7 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
 {
 
     llen = len;
-    fprintf(stderr, "\n[pluto] TX: len=%d is_last=%d dump_rx=%d", len, is_last, do_dump_rx);
+    //fprintf(stderr, "\n[pluto] TX: len=%d is_last=%d dump_rx=%d", len, is_last, do_dump_rx);
 
     if(more_tx_data==0) {
       tx_p_dat = (char *) iio_buffer_first(txbuf,tx0_i);
