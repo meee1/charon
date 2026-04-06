@@ -28,7 +28,7 @@ PLATFORM := $(shell uname -s)
 
 OUT_DIR := .build_host
 # Get all source files, explicitly excluding pluto.c and pluto_host.c from wildcard
-ALL_SRC := $(wildcard charon.c config.c crc.c glibc_compat.c ofdm_rx.c ofdm_tx.c pss_sync.c tap_device.c tcp_subs.c timers.c util.c)
+ALL_SRC := $(wildcard charon.c config.c crc.c cw_tone.c glibc_compat.c ofdm_rx.c ofdm_tx.c tap_device.c tcp_subs.c timers.c util.c)
 # Add pluto_host.c (not pluto.c)
 SRC := $(ALL_SRC) pluto_host.c
 OBJ_ := $(SRC:$(SUFFIX)=.o)

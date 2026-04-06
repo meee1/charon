@@ -42,7 +42,7 @@
 #include "crc.h"
 #include "ethernet.h"
 #include "config.h"
-#include "pss_sync.h"
+#include "cw_tone.h"
 
 static unsigned int M = OFDM_M;        // number of subcarriers
 static unsigned int cp_len = CP_LEN;   // cyclic prefix length
@@ -367,7 +367,7 @@ void init_ofdm_rx(void) {
   _q  = fs;
   _qq = _q->fs;
 
-  pss_sync_init();
+  cw_tone_init();
 
   //ofdm_nco = nco_crcf_create(LIQUID_NCO);
   //nco_crcf_set_frequency(ofdm_nco, 0); 
@@ -383,8 +383,8 @@ void do_ofdm_rx(float complex sample) {
   // the AD9361 xo_correction (40 MHz base clock) so the hardware LO and
   // sample rates converge toward the correct values.
   if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
-    if (pss_sync_execute(sample)) {
-      float cfo = pss_sync_get_freq_offset();   // cycles/sample
+    if (cw_tone_execute(sample)) {
+      float cfo = cw_tone_get_freq_offset();   // cycles/sample
       nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
       if (cfo != 0.0f) {
         pluto_apply_pss_xo_correction(cfo);
@@ -392,10 +392,10 @@ void do_ofdm_rx(float complex sample) {
         // reset the internal NCO so it doesn't double-correct.
         nco_crcf_set_frequency(_qq->nco_rx, 0.0f);
       }
-      fprintf(stderr, "\nPSS: detected CFO=%.6f rad/samp (hyp %+d sc, peak=%.3f)",
+      fprintf(stderr, "\nCW_TONE: CFO=%.6f rad/samp (%.1f Hz, metric=%.3f)",
               2.0f * (float)M_PI * cfo,
-              (int)(cfo * (float)OFDM_M + (cfo >= 0.0f ? 0.5f : -0.5f)),
-              pss_sync_get_peak());
+              cfo * (float)sample_freq_hz,
+              cw_tone_get_peak());
     }
   }
   ofdmflexframesync_execute(fs, &sample, 1);
