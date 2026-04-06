@@ -49,3 +49,9 @@ Mkfile.old
 dkms.conf
 _codeql_detected_source_root
 third_party/
+
+# Test binaries
+tests/test_crc
+tests/test_tcp_subs
+tests/test_timers
+tests/test_cw_tone
