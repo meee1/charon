@@ -55,3 +55,4 @@ tests/test_crc
 tests/test_tcp_subs
 tests/test_timers
 tests/test_cw_tone
+tests/test_cw_tone_channel
