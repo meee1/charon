@@ -8,8 +8,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  build1:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build and run unit tests
+      run: |
+        set -e
+        cd tests
+        make check
 
+  build1:
+    needs: unit-tests
     runs-on: ubuntu-24.04
 
     steps:
