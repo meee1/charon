@@ -537,6 +537,457 @@ static void test_channel_multipath_longer_delay(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Large CFO tests (100 kHz at 1.4 MHz sample rate)
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_channel_cfo_100khz(void)
+{
+    TEST_BEGIN("channel: 100 kHz CFO aliases outside unambiguous range");
+    // 100 kHz at 1.4 MHz sample rate = 0.0714 cycles/sample
+    // Unambiguous range is ±1/(2*64) = ±0.0078 cycles/sample (±10.9 kHz)
+    // 100 kHz is ~9x outside this range — estimate will alias.
+    srand(10000);
+    float target_cfo = 100000.0f / 1400000.0f;  // 0.0714 cycles/sample
+    float est_cfo;
+    int det = feed_impaired_tone(target_cfo, 0.0f, 40.0f, 1.0f, &est_cfo);
+    // The tone should still be detected (autocorrelation magnitude is high)
+    // but the estimated CFO will be aliased into [-0.0078, +0.0078]
+    if (det) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "aliased CFO %.6f should be within unambiguous range", est_cfo);
+        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f, msg);
+        // Verify it does NOT equal the true 100 kHz offset
+        TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) > 0.01f,
+                        "estimate should NOT match true 100 kHz offset");
+    }
+    // Detection may or may not happen depending on aliased phase coherence
+    TEST_PASS();
+}
+
+static void test_channel_cfo_100khz_negative(void)
+{
+    TEST_BEGIN("channel: -100 kHz CFO aliases outside unambiguous range");
+    srand(10001);
+    float target_cfo = -100000.0f / 1400000.0f;
+    float est_cfo;
+    int det = feed_impaired_tone(target_cfo, 0.0f, 40.0f, 1.0f, &est_cfo);
+    if (det) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "aliased CFO %.6f should be within unambiguous range", est_cfo);
+        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f, msg);
+    }
+    TEST_PASS();
+}
+
+static void test_channel_cfo_100khz_noisy(void)
+{
+    TEST_BEGIN("channel: 100 kHz CFO with 20 dB noise");
+    srand(10002);
+    float target_cfo = 100000.0f / 1400000.0f;
+    float est_cfo;
+    int det = feed_impaired_tone(target_cfo, 0.0f, 20.0f, 1.0f, &est_cfo);
+    if (det) {
+        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f,
+                        "aliased estimate should stay in unambiguous range");
+    }
+    TEST_PASS();
+}
+
+static void test_channel_cfo_near_edge(void)
+{
+    TEST_BEGIN("channel: CFO at ±10 kHz (near unambiguous edge)");
+    // 10 kHz / 1.4 MHz = 0.00714 cycles/sample — just inside ±0.0078
+    float cfo_10k = 10000.0f / 1400000.0f;
+    for (int sign = -1; sign <= 1; sign += 2) {
+        float target = (float)sign * cfo_10k;
+        srand(10100 + sign);
+        float est_cfo;
+        int det = feed_impaired_tone(target, 0.0f, 30.0f, 1.0f, &est_cfo);
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "10 kHz (%+.6f): det=%d est=%.6f err=%.6f",
+                 target, det, est_cfo, fabsf(est_cfo - target));
+        TEST_ASSERT_MSG(det, msg);
+        TEST_ASSERT_MSG(fabsf(est_cfo - target) < 0.002f, msg);
+    }
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Sync timing tests — verify detection fires at the correct sample position
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_sync_detection_timing(void)
+{
+    TEST_BEGIN("sync: detection fires within expected sample window");
+    cw_tone_init();
+
+    // Feed exactly 128 DC tone samples. Detection requires filling the
+    // circular buffer (128 samples) then one full autocorrelation window.
+    // Detection should fire at or near sample 128.
+    int detect_sample = -1;
+    for (int n = 0; n < 256; n++) {
+        if (cw_tone_execute(1.0f + 0.0f * _Complex_I)) {
+            detect_sample = n;
+            break;
+        }
+    }
+    char msg[128];
+    snprintf(msg, sizeof(msg), "detected at sample %d (expected ~128)", detect_sample);
+    TEST_ASSERT_MSG(detect_sample >= 0, "tone should be detected");
+    // Should detect at sample 128 (after buffer fills)
+    TEST_ASSERT_MSG(detect_sample == 128, msg);
+    TEST_PASS();
+}
+
+static void test_sync_detection_after_noise_gap(void)
+{
+    TEST_BEGIN("sync: detection timing correct after noise gap");
+    cw_tone_init();
+    srand(11001);
+
+    int noise_len = 300;
+    int tone_start = noise_len;  // tone starts at this sample index
+    int detect_sample = -1;
+
+    for (int n = 0; n < noise_len + 512; n++) {
+        float complex sample;
+        if (n < noise_len) {
+            // Low-level noise
+            float re = ((float)rand() / RAND_MAX) * 0.1f - 0.05f;
+            float im = ((float)rand() / RAND_MAX) * 0.1f - 0.05f;
+            sample = re + im * _Complex_I;
+        } else {
+            sample = 1.0f + 0.0f * _Complex_I;
+        }
+
+        if (detect_sample < 0 && cw_tone_execute(sample)) {
+            detect_sample = n;
+        }
+    }
+
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "detected at sample %d, tone starts at %d, delta=%d",
+             detect_sample, tone_start, detect_sample - tone_start);
+    TEST_ASSERT_MSG(detect_sample >= 0, "should detect tone after noise gap");
+    // Detection comes after the circular buffer fills with mostly-tone samples.
+    // With residual noise in the buffer, detection can fire slightly before
+    // the full 128-sample fill, so allow a window from ~100 to ~196.
+    int delta = detect_sample - tone_start;
+    TEST_ASSERT_MSG(delta >= 100 && delta <= 196, msg);
+    TEST_PASS();
+}
+
+static void test_sync_no_early_trigger(void)
+{
+    TEST_BEGIN("sync: no false trigger during partial tone fill");
+    cw_tone_init();
+
+    // Feed only 127 DC samples — should NOT trigger
+    int detected = 0;
+    for (int n = 0; n < 127; n++) {
+        if (cw_tone_execute(1.0f + 0.0f * _Complex_I)) {
+            detected = 1;
+        }
+    }
+    TEST_ASSERT_MSG(!detected, "should not detect with only 127 samples");
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Leading noise tests — noise before the tone
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_leading_noise_low_level(void)
+{
+    TEST_BEGIN("leading noise: low-level noise before tone");
+    cw_tone_init();
+    srand(12000);
+
+    float target_cfo = 0.003f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int noise_len = 500;
+
+    for (int n = 0; n < noise_len + 512; n++) {
+        float complex sample;
+        if (n < noise_len) {
+            float re = ((float)rand() / RAND_MAX) * 0.2f - 0.1f;
+            float im = ((float)rand() / RAND_MAX) * 0.2f - 0.1f;
+            sample = re + im * _Complex_I;
+        } else {
+            int t = n - noise_len;
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)t;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect tone after low-level leading noise");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f", est_cfo, target_cfo);
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_leading_noise_high_level(void)
+{
+    TEST_BEGIN("leading noise: high-level noise before tone");
+    cw_tone_init();
+    srand(12001);
+
+    float target_cfo = -0.002f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int noise_len = 400;
+
+    for (int n = 0; n < noise_len + 512; n++) {
+        float complex sample;
+        if (n < noise_len) {
+            // Noise at same power as tone
+            float re = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            float im = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            sample = re + im * _Complex_I;
+        } else {
+            int t = n - noise_len;
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)t;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect tone after high-level leading noise");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f", est_cfo, target_cfo);
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_leading_noise_no_false_trigger(void)
+{
+    TEST_BEGIN("leading noise: no false detection during noise-only segment");
+    cw_tone_init();
+    srand(12002);
+
+    int false_trigger = 0;
+    int noise_len = 1000;
+
+    // Feed only noise — no tone at all
+    for (int n = 0; n < noise_len; n++) {
+        float re = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        float im = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        if (cw_tone_execute(re + im * _Complex_I)) {
+            false_trigger = 1;
+            break;
+        }
+    }
+    TEST_ASSERT_MSG(!false_trigger, "should not false-trigger on noise-only input");
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Lagging noise tests — noise after the tone
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_lagging_noise_low_level(void)
+{
+    TEST_BEGIN("lagging noise: tone followed by low-level noise");
+    cw_tone_init();
+    srand(13000);
+
+    float target_cfo = 0.004f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int tone_len = 192;
+
+    for (int n = 0; n < tone_len + 300; n++) {
+        float complex sample;
+        if (n < tone_len) {
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+        } else {
+            float re = ((float)rand() / RAND_MAX) * 0.2f - 0.1f;
+            float im = ((float)rand() / RAND_MAX) * 0.2f - 0.1f;
+            sample = re + im * _Complex_I;
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect tone before lagging noise arrives");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f", est_cfo, target_cfo);
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_lagging_noise_high_level(void)
+{
+    TEST_BEGIN("lagging noise: tone followed by high-level noise");
+    cw_tone_init();
+    srand(13001);
+
+    float target_cfo = -0.005f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int tone_len = 192;
+
+    for (int n = 0; n < tone_len + 300; n++) {
+        float complex sample;
+        if (n < tone_len) {
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+        } else {
+            float re = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            float im = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            sample = re + im * _Complex_I;
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect tone before high-level lagging noise");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f", est_cfo, target_cfo);
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_lagging_noise_no_retrigger(void)
+{
+    TEST_BEGIN("lagging noise: no re-trigger during noise after detection");
+    cw_tone_init();
+    srand(13002);
+
+    int detect_count = 0;
+    int tone_len = 192;
+
+    for (int n = 0; n < tone_len + 500; n++) {
+        float complex sample;
+        if (n < tone_len) {
+            sample = 1.0f + 0.0f * _Complex_I;
+        } else {
+            float re = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            float im = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+            sample = re + im * _Complex_I;
+        }
+
+        if (cw_tone_execute(sample))
+            detect_count++;
+    }
+
+    char msg[64];
+    snprintf(msg, sizeof(msg), "detect_count=%d (expect 1)", detect_count);
+    TEST_ASSERT_MSG(detect_count == 1, msg);
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Leading + lagging noise (sandwich)
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_noise_sandwich(void)
+{
+    TEST_BEGIN("sandwich: noise-tone-noise with CFO");
+    cw_tone_init();
+    srand(14000);
+
+    float target_cfo = 0.006f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int pre_noise = 400;
+    int tone_len = 192;
+    int post_noise = 400;
+    int total = pre_noise + tone_len + post_noise;
+
+    for (int n = 0; n < total; n++) {
+        float complex sample;
+        if (n < pre_noise || n >= pre_noise + tone_len) {
+            // Noise
+            float re = ((float)rand() / RAND_MAX) * 1.0f - 0.5f;
+            float im = ((float)rand() / RAND_MAX) * 1.0f - 0.5f;
+            sample = re + im * _Complex_I;
+        } else {
+            // Tone
+            int t = n - pre_noise;
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)t;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect tone in noise sandwich");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_noise_sandwich_awgn(void)
+{
+    TEST_BEGIN("sandwich: noise-tone(+AWGN)-noise with CFO");
+    cw_tone_init();
+    srand(14001);
+
+    float target_cfo = -0.004f;
+    int detected = 0;
+    float est_cfo = 0.0f;
+    int pre_noise = 300;
+    int tone_len = 256;
+    int post_noise = 300;
+    int total = pre_noise + tone_len + post_noise;
+    float noise_sigma = 0.15f;  // ~16 dB SNR
+
+    for (int n = 0; n < total; n++) {
+        float complex sample;
+        if (n < pre_noise || n >= pre_noise + tone_len) {
+            float re = ((float)rand() / RAND_MAX) * 1.0f - 0.5f;
+            float im = ((float)rand() / RAND_MAX) * 1.0f - 0.5f;
+            sample = re + im * _Complex_I;
+        } else {
+            int t = n - pre_noise;
+            float phase = 2.0f * (float)M_PI * target_cfo * (float)t;
+            sample = cosf(phase) + sinf(phase) * _Complex_I;
+            sample += awgn(noise_sigma);
+        }
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect noisy tone in noise sandwich");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.003f, msg);
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Frequency drift (time-varying CFO)
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -615,6 +1066,31 @@ int main(void)
     // Multipath
     RUN_TEST(test_channel_multipath_short_delay);
     RUN_TEST(test_channel_multipath_longer_delay);
+
+    // Large CFO (100 kHz)
+    RUN_TEST(test_channel_cfo_100khz);
+    RUN_TEST(test_channel_cfo_100khz_negative);
+    RUN_TEST(test_channel_cfo_100khz_noisy);
+    RUN_TEST(test_channel_cfo_near_edge);
+
+    // Sync timing
+    RUN_TEST(test_sync_detection_timing);
+    RUN_TEST(test_sync_detection_after_noise_gap);
+    RUN_TEST(test_sync_no_early_trigger);
+
+    // Leading noise
+    RUN_TEST(test_leading_noise_low_level);
+    RUN_TEST(test_leading_noise_high_level);
+    RUN_TEST(test_leading_noise_no_false_trigger);
+
+    // Lagging noise
+    RUN_TEST(test_lagging_noise_low_level);
+    RUN_TEST(test_lagging_noise_high_level);
+    RUN_TEST(test_lagging_noise_no_retrigger);
+
+    // Noise sandwich (leading + lagging)
+    RUN_TEST(test_noise_sandwich);
+    RUN_TEST(test_noise_sandwich_awgn);
 
     // Drift
     RUN_TEST(test_channel_frequency_drift);
