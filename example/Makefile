@@ -6,7 +6,7 @@ CFLAGS = -Wall -O2 -g
 LDFLAGS = -lliquid -lm -lfftw3f
 
 # Targets
-TARGETS = ofdm_loopback_example ofdm_file_transfer pss_sync_example
+TARGETS = ofdm_loopback_example ofdm_file_transfer pss_sync_example ofdm_channel_test
 
 all: $(TARGETS)
 
@@ -22,6 +22,11 @@ ofdm_file_transfer: ofdm_file_transfer.c
 
 pss_sync_example: pss_sync_example.c
 	$(CC) $(CFLAGS) -o $@ $< -lm
+	@echo "Built: $@"
+	@echo "Run with: ./$@"
+
+ofdm_channel_test: ofdm_channel_test.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built: $@"
 	@echo "Run with: ./$@"
 

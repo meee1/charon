@@ -6,7 +6,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O0 -g -std=gnu99 -I..
 LDFLAGS = -lm
 
-TESTS = test_crc test_tcp_subs test_timers test_cw_tone
+TESTS = test_crc test_tcp_subs test_timers test_cw_tone test_cw_tone_channel
 
 all: $(TESTS)
 
@@ -21,6 +21,9 @@ test_timers: test_timers.c test_harness.h ../timers.c ../timers.h
 
 test_cw_tone: test_cw_tone.c test_harness.h ../cw_tone.c ../cw_tone.h ../ofdm_conf.h
 	$(CC) $(CFLAGS) -o $@ test_cw_tone.c $(LDFLAGS)
+
+test_cw_tone_channel: test_cw_tone_channel.c test_harness.h ../cw_tone.c ../cw_tone.h ../ofdm_conf.h
+	$(CC) $(CFLAGS) -o $@ test_cw_tone_channel.c $(LDFLAGS)
 
 check: $(TESTS)
 	@echo "==================================="

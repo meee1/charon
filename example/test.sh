@@ -79,6 +79,20 @@ else
 fi
 
 echo ""
+echo "Test 5: OFDM Channel Impairment (AWGN, CFO, phase, multipath)"
+echo "--------------------------------------------------------------"
+if [ -f "./ofdm_channel_test" ]; then
+    if ./ofdm_channel_test; then
+        echo "✓ OFDM channel test PASSED"
+    else
+        echo "✗ OFDM channel test FAILED"
+        exit 1
+    fi
+else
+    echo "⊘ OFDM channel test SKIPPED (not built)"
+fi
+
+echo ""
 echo "=================================="
 echo "✓ All tests PASSED!"
 echo "=================================="
