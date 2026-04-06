@@ -21,13 +21,13 @@ make
 ```bash
 make host
 ```
-This produces `charon-host`, which replaces RF hardware with UDP sockets (both TX and RX on port 5002 at `127.0.0.1`). See `HOST_MODE.md` for integration details.
+This produces `charon-host`, which connects to a remote PlutoSDR over the network via libiio (IIO daemon). All RF operations (AD9361 config, IQ streaming, gain, AGC) work identically to on-device — the difference is IIO commands travel over the network. See `HOST_MODE.md` for URI options and integration details.
 
 ### Build example programs
 ```bash
 cd example && make
 ```
-Builds `ofdm_loopback_example` (TX/RX loopback test) and `ofdm_file_transfer` (multi-frame simulation). Note: examples use QAM-16 modulation for demonstration; production Charon uses QPSK (see `ofdm_conf.h`).
+Builds `ofdm_loopback_example` (TX/RX loopback test), `ofdm_file_transfer` (multi-frame simulation), `pss_sync_example` (PSS frequency-offset sync demo), and `ofdm_channel_test` (channel impairment test). Note: examples use QAM-16 modulation for demonstration; production Charon uses QPSK (see `ofdm_conf.h`).
 
 ### Full firmware image
 ```bash
@@ -47,7 +47,7 @@ make -f Makefile.host clean  # Host build artifacts in .build_host/
 ```
 charon.c          Main event loop, MAC layer (CSMA/LBT), ACK/retransmission state machine
 pluto.c           PlutoSDR hardware interface via libiio/AD9361 (AGC, frequency, gain)
-pluto_host.c      Host-mode replacement: UDP sockets instead of hardware
+pluto_host.c      Host-mode replacement: remote PlutoSDR via libiio network context
 ofdm_tx.c         OFDM frame modulation using liquid-dsp ofdmflexframegen
 ofdm_rx.c         OFDM frame demodulation using liquid-dsp ofdmflexframesync
 tap_device.c      TAP network device (ofdm0) creation, bridge setup, frame wrapping
@@ -62,6 +62,7 @@ glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_
 
 cw_tone.c         CW tone CFO estimator — TX generates 128-sample DC tone, RX detects
                   via lag-64 autocorrelation and estimates carrier frequency offset
+pss_sync.c        Legacy PSS Zadoff-Chu correlator (replaced by cw_tone.c, retained for reference)
 
 ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 1x decimation)
 ofdm.h            liquid-dsp internal struct definitions
@@ -75,6 +76,15 @@ example/          Host-mode loopback and file transfer examples
   test.sh         Automated test script
   benchmark.sh    Throughput benchmark script
 
+tests/            Unit test suite (CRC, TCP, timers, CW tone, channel simulation)
+  test_harness.h  Minimal assert-based test framework (no external dependencies)
+  test_crc.c      CRC-32 correctness tests
+  test_tcp_subs.c TCP MSS/window rewriting tests
+  test_timers.c   Microsecond timer tests
+  test_cw_tone.c  CW tone generation and detection tests
+  test_cw_tone_channel.c  CW tone under channel impairments (CFO, noise, multipath)
+
+deploy.sh         Script to deploy charon binary to PlutoSDR via SSH
 build_pluto_image/              Helper scripts/configs for PlutoSDR firmware builds
 changes_to_plutosdr_fw_configs_rel_to_v28/  Diffs of config changes vs firmware v0.28
 buildroot_static_libs.patch     Patch enabling static library builds in buildroot
@@ -137,7 +147,7 @@ replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for 
 
 ### Build Targets
 - `Makefile` — ARM cross-compilation with Linaro GCC (`arm-linux-gnueabihf-gcc`)
-  - Compiler flags: `-O2 -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -D_TIME_BITS=32 -fno-builtin-strtol`
+  - Compiler flags: `-O2 -flto -std=gnu99 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -ggdb -D_TIME_BITS=32 -fno-builtin-strtol`
   - Output directory: `.build/`
   - Statically links: libliquid.a, libfftw3f.a, libfec, libtuntap
   - Dynamically links: libc, libiio, libad9361, libini, libusb-1.0, libserialport, libavahi-client, libavahi-common, libxml2, libz, libdbus-1
@@ -145,7 +155,12 @@ replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for 
 - `Makefile.host` — Native host build with system gcc
   - Compiler flags: `-O0 -std=gnu99 -ggdb -D_FILE_OFFSET_BITS=64`
   - Output directory: `.build_host/`
-  - Uses `pluto_host.c` instead of `pluto.c`
+  - Uses `pluto_host.c` instead of `pluto.c` (remote IIO via network)
+  - Dynamically links all libraries (libiio, libad9361, liquid-dsp, fftw3, etc.)
+- `tests/Makefile` — Unit tests with system gcc
+  - Compiler flags: `-Wall -Wextra -O0 -g -std=gnu99`
+  - Each test `#include`s the source `.c` directly — no separate library step
+  - `make check` builds and runs all tests
 
 ### Key Dependencies
 - **liquid-dsp** — OFDM PHY layer (ofdmflexframegen, ofdmflexframesync, FIR filters)
@@ -178,37 +193,47 @@ replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for 
 
 ## Testing
 
-There is no traditional unit test suite. Testing is done through:
+### Unit tests (`tests/` directory)
+```bash
+cd tests && make check
+```
+- Self-contained C tests using a minimal assert-based harness (`test_harness.h`)
+- Each test file `#include`s the `.c` under test directly, allowing access to `static` functions
+- No external dependencies beyond the standard library and `-lm`
+- Tests: `test_crc`, `test_tcp_subs`, `test_timers`, `test_cw_tone`, `test_cw_tone_channel`
+- CI runs these first; build proceeds only if all pass
 
-1. **Example programs** (`example/` directory):
-   - `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF (uses QAM-16)
-   - `ofdm_file_transfer` — simulates multi-frame file transfer
-   - Run: `cd example && make && ./ofdm_loopback_example`
-   - Automated tests: `cd example && ./test.sh`
+### Example programs (`example/` directory)
+- `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF (uses QAM-16)
+- `ofdm_file_transfer` — simulates multi-frame file transfer
+- `pss_sync_example` — PSS Zadoff-Chu sync demonstration
+- `ofdm_channel_test` — OFDM under channel impairments
+- Run: `cd example && make && ./ofdm_loopback_example`
+- Automated tests: `cd example && ./test.sh`
 
-2. **Host mode** (`make host`):
-   - Produces `charon-host` using UDP sockets instead of RF hardware
-   - TX sends OFDM baseband IQ samples (int16_t pairs) to `127.0.0.1:5002`
-   - RX receives OFDM baseband IQ samples (int16_t pairs) from `127.0.0.1:5002`
-   - No software FIR stage — samples are at the OFDM baseband rate (1.4 MHz equivalent)
-   - External GNU Radio / SDR++ integrations must provide their own interpolation/decimation to match hardware sample rates
-   - TX destination is automatically learned from the first RX packet source address
-   - See `HOST_MODE.md` for details and integration examples
+### Host mode (`make host`)
+- Produces `charon-host` connecting to a remote PlutoSDR via libiio network context
+- All RF control (AD9361 config, IQ streaming, gain, AGC, frequency) works over the network
+- Specify PlutoSDR URI: `sudo ./charon-host --uri ip:192.168.2.1`
+- IQ recording/playback: `--save-tx <file>` and `--load-rx <file>`
+- See `HOST_MODE.md` for URI formats and integration details
 
-3. **On-device testing** (via SSH):
-   - `ssh root@192.168.2.1` (password: `analog`)
-   - Restart: `/etc/init.d/S100-start_charon restart`
-   - Performance: `iperf3 -c <remote_ip>` (iperf3 server auto-starts on PlutoSDR)
+### On-device testing (via SSH)
+- `ssh root@192.168.2.1` (password: `analog`)
+- Restart: `/etc/init.d/S100-start_charon restart`
+- Performance: `iperf3 -c <remote_ip>` (iperf3 server auto-starts on PlutoSDR)
 
-4. **Profiling** (`deploy_callgrind.sh`):
-   - Deploys and runs Callgrind/Valgrind on-device for performance analysis
+### Profiling (`deploy_callgrind.sh`)
+- Deploys and runs Callgrind/Valgrind on-device for performance analysis
 
-5. **CI** (`.github/workflows/nomod.yml`):
-   - GitHub Actions on ubuntu-24.04
-   - Applies `buildroot_static_libs.patch` to buildroot before building
-   - Builds cross-compiled binary, then full firmware image
-   - Uploads artifacts: `charon` binary, `out.txt` disassembly, and `plutosdr-fw/build/` firmware
-   - Triggered on push/PR to `master` and `dev` branches, and manual dispatch
+### CI (`.github/workflows/nomod.yml`)
+- GitHub Actions on ubuntu-24.04
+- **Stage 1**: Builds and runs unit tests (`cd tests && make check`)
+- **Stage 2** (after tests pass): Cross-compiles charon binary with full toolchain
+- **Stage 3**: Builds full PlutoSDR firmware image
+- Applies `buildroot_static_libs.patch` to buildroot before building
+- Uploads artifacts: `charon` binary, `out.txt` disassembly, and `plutosdr-fw/build/` firmware
+- Triggered on push/PR to `master` and `dev` branches, and manual dispatch
 
 ## Runtime Configuration
 
