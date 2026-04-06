@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Charon is an embedded C application that transforms Analog Devices PlutoSDR devices into autonomous OFDM transceivers with batman-adv mesh networking. It runs on the PlutoSDR's ARM processor (Xilinx Zynq-7000 Cortex-A9) and implements a 1.4 MHz OFDM-128 QPSK wireless physical layer, providing layer-2 mesh routing for TCP/IP traffic between host systems over ISM bands (915 MHz or 2.4 GHz).
+Charon is an embedded C application that transforms Analog Devices PlutoSDR devices into autonomous OFDM transceivers with batman-adv mesh networking. It runs on the PlutoSDR's ARM processor (Xilinx Zynq-7000 Cortex-A9) and implements a 1.4 MHz OFDM-64 QPSK wireless physical layer with CW-tone-based CFO estimation, providing layer-2 mesh routing for TCP/IP traffic between host systems over ISM bands (915 MHz or 2.4 GHz).
 
 Named after one of Pluto's moons.
 
@@ -60,7 +60,10 @@ timers.c          Microsecond-resolution timers (gettimeofday-based)
 glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_strtoll,
                   __isoc23_strtoul, and __isoc23_strtoull via linker --wrap flags
 
-ofdm_conf.h       OFDM parameters (128 subcarriers, QPSK, FEC, 1x decimation)
+cw_tone.c         CW tone CFO estimator — TX generates 128-sample DC tone, RX detects
+                  via lag-64 autocorrelation and estimates carrier frequency offset
+
+ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 1x decimation)
 ofdm.h            liquid-dsp internal struct definitions
 ethernet.h        Ethernet frame structures
 
@@ -81,10 +84,23 @@ deploy_callgrind.sh             Script to deploy and run Callgrind/Valgrind prof
 ## Signal Flow
 
 ```
-RX: AD9361 IQ samples -> pluto.c -> ofdm_rx.c (demodulate) -> tap_device.c -> Linux stack
-TX: tap_device.c -> ofdm_tx.c (modulate) -> pluto.c -> AD9361 RF output
+RX: AD9361 IQ samples -> pluto.c -> ofdm_rx.c (CW tone CFO + demodulate) -> tap_device.c -> Linux stack
+TX: tap_device.c -> ofdm_tx.c (CW tone + modulate) -> pluto.c -> AD9361 RF output
 MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame wrapping
 ```
+
+### CFO Estimation (`cw_tone.c`)
+
+A single CW (continuous wave) DC tone is used for carrier frequency offset estimation,
+replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for the Cortex-A9.
+
+- **TX**: 128 samples of DC tone (`1.0 + 0.0j`) transmitted before each OFDM frame
+- **RX**: While in SEEKPLCP state, a lag-64 autocorrelation detects the tone and estimates CFO:
+  `cfo = arg(R(64)) / (2*pi*64)` in cycles/sample
+- **Detection threshold**: Normalized autocorrelation metric `|R|/(P/2)` >= 0.85
+- **Correction**: CFO applied to liquid-dsp NCO and hardware XO (`pluto_apply_pss_xo_correction`)
+- **Cost**: ~4 multiply-adds per sample (vs ~441 for the old PSS multi-hypothesis correlator)
+- **Over-the-air frame**: `[CW tone 128 samples] [OFDM PLCP + data]`
 
 ### MAC Layer Detail (`charon.c`)
 
@@ -143,8 +159,8 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| `OFDM_M` | 128 | Subcarrier count |
-| `CP_LEN` | 4 | Cyclic prefix length (samples) |
+| `OFDM_M` | 64 | Subcarrier count |
+| `CP_LEN` | 16 | Cyclic prefix length (samples) |
 | `TAPER_LEN` | 2 | Taper length (samples) |
 | `DECIMATE_INTERPOLATE_FACTOR` | 1 | Software oversampling ratio (hardware FIR handles decimation) |
 | `OFDM_MODULATION` | `LIQUID_MODEM_QPSK` | Production modulation |
