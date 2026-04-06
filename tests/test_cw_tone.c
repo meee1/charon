@@ -247,6 +247,86 @@ static void test_cw_tone_no_retrigger(void)
     TEST_PASS();
 }
 
+static void test_cw_tone_detect_large_positive_cfo(void)
+{
+    TEST_BEGIN("cw_tone: estimates +100 kHz CFO (0.0714 cyc/samp)");
+    cw_tone_init();
+    float target_cfo = 100000.0f / 1400000.0f;  // 0.07142857
+    int detected = 0;
+    for (int n = 0; n < 512; n++) {
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex sample = cosf(phase) + sinf(phase) * _Complex_I;
+        if (cw_tone_execute(sample)) { detected = 1; break; }
+    }
+    TEST_ASSERT_MSG(detected, "100 kHz offset tone should be detected");
+    float est_cfo = cw_tone_get_freq_offset();
+    float error = fabsf(est_cfo - target_cfo);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f", est_cfo, target_cfo, error);
+    TEST_ASSERT_MSG(error < 0.001f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_detect_large_negative_cfo(void)
+{
+    TEST_BEGIN("cw_tone: estimates -100 kHz CFO");
+    cw_tone_init();
+    float target_cfo = -100000.0f / 1400000.0f;
+    int detected = 0;
+    for (int n = 0; n < 512; n++) {
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex sample = cosf(phase) + sinf(phase) * _Complex_I;
+        if (cw_tone_execute(sample)) { detected = 1; break; }
+    }
+    TEST_ASSERT_MSG(detected, "-100 kHz offset tone should be detected");
+    float est_cfo = cw_tone_get_freq_offset();
+    float error = fabsf(est_cfo - target_cfo);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f", est_cfo, target_cfo, error);
+    TEST_ASSERT_MSG(error < 0.001f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_detect_moderate_cfo(void)
+{
+    TEST_BEGIN("cw_tone: estimates +50 kHz CFO (0.0357 cyc/samp)");
+    cw_tone_init();
+    float target_cfo = 50000.0f / 1400000.0f;
+    int detected = 0;
+    for (int n = 0; n < 512; n++) {
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex sample = cosf(phase) + sinf(phase) * _Complex_I;
+        if (cw_tone_execute(sample)) { detected = 1; break; }
+    }
+    TEST_ASSERT_MSG(detected, "50 kHz offset tone should be detected");
+    float est_cfo = cw_tone_get_freq_offset();
+    float error = fabsf(est_cfo - target_cfo);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f", est_cfo, target_cfo, error);
+    TEST_ASSERT_MSG(error < 0.001f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_detect_near_coarse_limit(void)
+{
+    TEST_BEGIN("cw_tone: estimates +160 kHz CFO (0.114 cyc/samp, near coarse limit)");
+    cw_tone_init();
+    float target_cfo = 160000.0f / 1400000.0f;  // 0.1143
+    int detected = 0;
+    for (int n = 0; n < 512; n++) {
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex sample = cosf(phase) + sinf(phase) * _Complex_I;
+        if (cw_tone_execute(sample)) { detected = 1; break; }
+    }
+    TEST_ASSERT_MSG(detected, "160 kHz offset tone should be detected");
+    float est_cfo = cw_tone_get_freq_offset();
+    float error = fabsf(est_cfo - target_cfo);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f", est_cfo, target_cfo, error);
+    TEST_ASSERT_MSG(error < 0.001f, msg);
+    TEST_PASS();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // main
 ///////////////////////////////////////////////////////////////////////////////
@@ -265,6 +345,10 @@ int main(void)
     RUN_TEST(test_cw_tone_reset_clears_state);
     RUN_TEST(test_cw_tone_peak_metric);
     RUN_TEST(test_cw_tone_no_retrigger);
+    RUN_TEST(test_cw_tone_detect_large_positive_cfo);
+    RUN_TEST(test_cw_tone_detect_large_negative_cfo);
+    RUN_TEST(test_cw_tone_detect_moderate_cfo);
+    RUN_TEST(test_cw_tone_detect_near_coarse_limit);
 
     TEST_SUMMARY();
     return TEST_EXIT_CODE();

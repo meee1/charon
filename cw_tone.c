@@ -47,6 +47,7 @@
 
 #define CW_TONE_LEN          128
 #define CW_TONE_HALF         (CW_TONE_LEN / 2)
+#define CW_TONE_COARSE_LAG   4
 #define CW_TONE_CORR_THRESH  0.85f
 #define CW_TONE_PWR_THRESH   1e-6f
 
@@ -68,8 +69,8 @@ static float         cw_peak_metric;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void cw_tone_init(void)
 {
-    fprintf(stderr, "\n[cw_tone] init: tone_len=%d half=%d thresh=%.2f",
-            CW_TONE_LEN, CW_TONE_HALF, CW_TONE_CORR_THRESH);
+    fprintf(stderr, "\n[cw_tone] init: tone_len=%d coarse_lag=%d fine_lag=%d thresh=%.2f",
+            CW_TONE_LEN, CW_TONE_COARSE_LAG, CW_TONE_HALF, CW_TONE_CORR_THRESH);
     memset(cw_buf, 0, sizeof(cw_buf));
     cw_buf_idx     = 0;
     cw_sample_count = 0;
@@ -110,15 +111,15 @@ int cw_tone_execute(float complex sample)
         return 0;
     }
 
-    // Compute lag-D autocorrelation: R = sum( x[n] * conj(x[n+D]) )
-    // and total power P = sum( |x[n]|^2 )
-    float complex autocorr = 0.0f + 0.0f * _Complex_I;
+    // --- Stage 1: Coarse CFO estimation (lag-4, ±175 kHz capture range) ---
+    int coarse_pairs = CW_TONE_LEN - CW_TONE_COARSE_LAG;
+    float complex autocorr_coarse = 0.0f + 0.0f * _Complex_I;
     float power = 0.0f;
 
-    for (n = 0; n < CW_TONE_HALF; n++) {
+    for (n = 0; n < coarse_pairs; n++) {
         int idx_early = (cw_buf_idx + n) % CW_TONE_LEN;
-        int idx_late  = (cw_buf_idx + n + CW_TONE_HALF) % CW_TONE_LEN;
-        autocorr += cw_buf[idx_late] * conjf(cw_buf[idx_early]);
+        int idx_late  = (cw_buf_idx + n + CW_TONE_COARSE_LAG) % CW_TONE_LEN;
+        autocorr_coarse += cw_buf[idx_late] * conjf(cw_buf[idx_early]);
     }
 
     for (n = 0; n < CW_TONE_LEN; n++)
@@ -127,16 +128,35 @@ int cw_tone_execute(float complex sample)
     if (power < CW_TONE_PWR_THRESH)
         return 0;
 
-    float metric = cabsf(autocorr) / (power / 2.0f);
+    float power_scaled = power * (float)coarse_pairs / (float)CW_TONE_LEN;
+    float metric = cabsf(autocorr_coarse) / power_scaled;
     cw_peak_metric = metric;
 
-    if (metric >= CW_TONE_CORR_THRESH) {
-        cw_cfo_est = cargf(autocorr) / (2.0f * (float)M_PI * (float)CW_TONE_HALF);
-        cw_sample_count = 0;  // reset to avoid re-triggering on same tone
-        return 1;
+    if (metric < CW_TONE_CORR_THRESH)
+        return 0;
+
+    float coarse_cfo = cargf(autocorr_coarse) / (2.0f * (float)M_PI * (float)CW_TONE_COARSE_LAG);
+
+    // --- Stage 2: Fine CFO estimation (lag-64, after de-rotation) ---
+    float complex derot_buf[CW_TONE_LEN];
+    float derot_phase_inc = -2.0f * (float)M_PI * coarse_cfo;
+    float complex phasor = 1.0f + 0.0f * _Complex_I;
+    float complex delta  = cosf(derot_phase_inc) + sinf(derot_phase_inc) * _Complex_I;
+    for (n = 0; n < CW_TONE_LEN; n++) {
+        int idx = (cw_buf_idx + n) % CW_TONE_LEN;
+        derot_buf[n] = cw_buf[idx] * phasor;
+        phasor *= delta;
     }
 
-    return 0;
+    float complex autocorr_fine = 0.0f + 0.0f * _Complex_I;
+    for (n = 0; n < CW_TONE_HALF; n++)
+        autocorr_fine += derot_buf[n + CW_TONE_HALF] * conjf(derot_buf[n]);
+
+    float fine_cfo = cargf(autocorr_fine) / (2.0f * (float)M_PI * (float)CW_TONE_HALF);
+
+    cw_cfo_est = coarse_cfo + fine_cfo;
+    cw_sample_count = 0;  // reset to avoid re-triggering on same tone
+    return 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////

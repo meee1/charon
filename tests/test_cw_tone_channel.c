@@ -542,56 +542,78 @@ static void test_channel_multipath_longer_delay(void)
 
 static void test_channel_cfo_100khz(void)
 {
-    TEST_BEGIN("channel: 100 kHz CFO aliases outside unambiguous range");
-    // 100 kHz at 1.4 MHz sample rate = 0.0714 cycles/sample
-    // Unambiguous range is ±1/(2*64) = ±0.0078 cycles/sample (±10.9 kHz)
-    // 100 kHz is ~9x outside this range — estimate will alias.
+    TEST_BEGIN("channel: +100 kHz CFO estimated correctly at 40 dB");
     srand(10000);
     float target_cfo = 100000.0f / 1400000.0f;  // 0.0714 cycles/sample
     float est_cfo;
     int det = feed_impaired_tone(target_cfo, 0.0f, 40.0f, 1.0f, &est_cfo);
-    // The tone should still be detected (autocorrelation magnitude is high)
-    // but the estimated CFO will be aliased into [-0.0078, +0.0078]
-    if (det) {
-        char msg[128];
-        snprintf(msg, sizeof(msg),
-                 "aliased CFO %.6f should be within unambiguous range", est_cfo);
-        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f, msg);
-        // Verify it does NOT equal the true 100 kHz offset
-        TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) > 0.01f,
-                        "estimate should NOT match true 100 kHz offset");
-    }
-    // Detection may or may not happen depending on aliased phase coherence
+    TEST_ASSERT_MSG(det, "100 kHz tone should be detected");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.001f, msg);
     TEST_PASS();
 }
 
 static void test_channel_cfo_100khz_negative(void)
 {
-    TEST_BEGIN("channel: -100 kHz CFO aliases outside unambiguous range");
+    TEST_BEGIN("channel: -100 kHz CFO estimated correctly at 40 dB");
     srand(10001);
     float target_cfo = -100000.0f / 1400000.0f;
     float est_cfo;
     int det = feed_impaired_tone(target_cfo, 0.0f, 40.0f, 1.0f, &est_cfo);
-    if (det) {
-        char msg[128];
-        snprintf(msg, sizeof(msg),
-                 "aliased CFO %.6f should be within unambiguous range", est_cfo);
-        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f, msg);
-    }
+    TEST_ASSERT_MSG(det, "-100 kHz tone should be detected");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.001f, msg);
     TEST_PASS();
 }
 
 static void test_channel_cfo_100khz_noisy(void)
 {
-    TEST_BEGIN("channel: 100 kHz CFO with 20 dB noise");
+    TEST_BEGIN("channel: 100 kHz CFO estimated correctly at 20 dB");
     srand(10002);
     float target_cfo = 100000.0f / 1400000.0f;
     float est_cfo;
     int det = feed_impaired_tone(target_cfo, 0.0f, 20.0f, 1.0f, &est_cfo);
-    if (det) {
-        TEST_ASSERT_MSG(fabsf(est_cfo) <= 0.0079f,
-                        "aliased estimate should stay in unambiguous range");
+    TEST_ASSERT_MSG(det, "100 kHz tone should be detected at 20 dB SNR");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_channel_cfo_sweep_wide(void)
+{
+    TEST_BEGIN("channel: CFO estimation across wide sweep at 30 dB");
+    float cfo_values[] = {-0.10f, -0.07f, -0.04f, 0.04f, 0.07f, 0.10f};
+    for (int i = 0; i < 6; i++) {
+        srand(10200 + i);
+        float est_cfo;
+        int det = feed_impaired_tone(cfo_values[i], 0.0f, 30.0f, 1.0f, &est_cfo);
+        char msg[128];
+        snprintf(msg, sizeof(msg), "cfo=%.4f: det=%d est=%.6f err=%.6f",
+                 cfo_values[i], det, est_cfo, fabsf(est_cfo - cfo_values[i]));
+        TEST_ASSERT_MSG(det, msg);
+        TEST_ASSERT_MSG(fabsf(est_cfo - cfo_values[i]) < 0.002f, msg);
     }
+    TEST_PASS();
+}
+
+static void test_channel_large_cfo_plus_phase_plus_noise(void)
+{
+    TEST_BEGIN("channel: 100 kHz CFO + phase offset + 15 dB noise");
+    srand(10300);
+    float target_cfo = 100000.0f / 1400000.0f;
+    float est_cfo;
+    int det = feed_impaired_tone(target_cfo, 1.5f, 15.0f, 1.0f, &est_cfo);
+    TEST_ASSERT_MSG(det, "should detect with large CFO + phase + noise");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.003f, msg);
     TEST_PASS();
 }
 
@@ -673,11 +695,12 @@ static void test_sync_detection_after_noise_gap(void)
              "detected at sample %d, tone starts at %d, delta=%d",
              detect_sample, tone_start, detect_sample - tone_start);
     TEST_ASSERT_MSG(detect_sample >= 0, "should detect tone after noise gap");
-    // Detection comes after the circular buffer fills with mostly-tone samples.
-    // With residual noise in the buffer, detection can fire slightly before
-    // the full 128-sample fill, so allow a window from ~100 to ~196.
+    // Detection comes after enough tone samples enter the circular buffer for
+    // the autocorrelation metric to exceed threshold.  With the coarse lag-4
+    // detector and low-level noise, detection can fire well before 128 tone
+    // samples accumulate, so allow a wide window.
     int delta = detect_sample - tone_start;
-    TEST_ASSERT_MSG(delta >= 100 && delta <= 196, msg);
+    TEST_ASSERT_MSG(delta >= 10 && delta <= 196, msg);
     TEST_PASS();
 }
 
@@ -1071,6 +1094,8 @@ int main(void)
     RUN_TEST(test_channel_cfo_100khz);
     RUN_TEST(test_channel_cfo_100khz_negative);
     RUN_TEST(test_channel_cfo_100khz_noisy);
+    RUN_TEST(test_channel_cfo_sweep_wide);
+    RUN_TEST(test_channel_large_cfo_plus_phase_plus_noise);
     RUN_TEST(test_channel_cfo_near_edge);
 
     // Sync timing
