@@ -39,7 +39,7 @@ PLATFORM := $(shell uname -s)
 
 
 OUT_DIR := .build
-ALL_SRC := $(wildcard charon.c config.c crc.c glibc_compat.c ofdm_rx.c ofdm_tx.c pss_sync.c tap_device.c tcp_subs.c timers.c util.c)
+ALL_SRC := $(wildcard charon.c config.c crc.c cw_tone.c glibc_compat.c ofdm_rx.c ofdm_tx.c tap_device.c tcp_subs.c timers.c util.c)
 SRC := $(ALL_SRC) pluto.c
 OBJ_ := $(SRC:$(SUFFIX)=.o)
 OBJ := $(addprefix $(OUT_DIR)/,$(OBJ_))

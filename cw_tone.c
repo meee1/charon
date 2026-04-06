@@ -1,0 +1,167 @@
+//MIT License
+//
+//Copyright (c) 2018 tvelliott
+//
+//Permission is hereby granted, free of charge, to any person obtaining a copy
+//of this software and associated documentation files (the "Software"), to deal
+//in the Software without restriction, including without limitation the rights
+//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//copies of the Software, and to permit persons to whom the Software is
+//furnished to do so, subject to the following conditions:
+//
+//The above copyright notice and this permission notice shall be included in all
+//copies or substantial portions of the Software.
+//
+//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//SOFTWARE.
+
+// Single CW (continuous wave) tone for carrier frequency offset estimation.
+//
+// TX side: cw_tone_get_tx_samples() fills a buffer with CW_TONE_LEN samples
+// of a DC tone (1.0 + 0.0j).  The tone is transmitted before the OFDM frame.
+//
+// RX side: cw_tone_execute() processes one sample at a time.  It maintains a
+// circular buffer of CW_TONE_LEN samples and computes a lag-CW_TONE_HALF
+// autocorrelation.  A pure tone produces |R(D)|/(P/2) ~ 1.0; when this metric
+// exceeds CW_TONE_CORR_THRESH the tone is declared detected and the CFO is
+// estimated from the autocorrelation phase:
+//   cfo = arg(R(D)) / (2*pi*D)   cycles/sample
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <complex.h>
+
+#include "ofdm_conf.h"
+#include "cw_tone.h"
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+#define CW_TONE_LEN          128
+#define CW_TONE_HALF         (CW_TONE_LEN / 2)
+#define CW_TONE_CORR_THRESH  0.85f
+#define CW_TONE_PWR_THRESH   1e-6f
+
+// ---------------------------------------------------------------------------
+// Module state
+// ---------------------------------------------------------------------------
+
+static float complex cw_buf[CW_TONE_LEN];
+static int           cw_buf_idx;
+static int           cw_sample_count;
+static float         cw_cfo_est;
+static float         cw_peak_metric;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void cw_tone_init(void)
+{
+    fprintf(stderr, "\n[cw_tone] init: tone_len=%d half=%d thresh=%.2f",
+            CW_TONE_LEN, CW_TONE_HALF, CW_TONE_CORR_THRESH);
+    memset(cw_buf, 0, sizeof(cw_buf));
+    cw_buf_idx     = 0;
+    cw_sample_count = 0;
+    cw_cfo_est     = 0.0f;
+    cw_peak_metric = 0.0f;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void cw_tone_reset(void)
+{
+    memset(cw_buf, 0, sizeof(cw_buf));
+    cw_buf_idx     = 0;
+    cw_sample_count = 0;
+    cw_cfo_est     = 0.0f;
+    cw_peak_metric = 0.0f;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Process one incoming IQ sample.
+//
+// Maintains a circular buffer of CW_TONE_LEN samples.  Once the buffer is
+// full, computes the lag-CW_TONE_HALF autocorrelation R and total power P.
+// If the normalized metric |R|/(P/2) exceeds threshold, the tone is detected
+// and CFO is estimated from arg(R).
+//
+// Returns 1 if tone detected, 0 otherwise.
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+int cw_tone_execute(float complex sample)
+{
+    int n;
+
+    cw_buf[cw_buf_idx] = sample;
+    cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
+
+    if (cw_sample_count < CW_TONE_LEN) {
+        cw_sample_count++;
+        return 0;
+    }
+
+    // Compute lag-D autocorrelation: R = sum( x[n] * conj(x[n+D]) )
+    // and total power P = sum( |x[n]|^2 )
+    float complex autocorr = 0.0f + 0.0f * _Complex_I;
+    float power = 0.0f;
+
+    for (n = 0; n < CW_TONE_HALF; n++) {
+        int idx_early = (cw_buf_idx + n) % CW_TONE_LEN;
+        int idx_late  = (cw_buf_idx + n + CW_TONE_HALF) % CW_TONE_LEN;
+        autocorr += cw_buf[idx_late] * conjf(cw_buf[idx_early]);
+    }
+
+    for (n = 0; n < CW_TONE_LEN; n++)
+        power += crealf(cw_buf[n] * conjf(cw_buf[n]));
+
+    if (power < CW_TONE_PWR_THRESH)
+        return 0;
+
+    float metric = cabsf(autocorr) / (power / 2.0f);
+    cw_peak_metric = metric;
+
+    if (metric >= CW_TONE_CORR_THRESH) {
+        cw_cfo_est = cargf(autocorr) / (2.0f * (float)M_PI * (float)CW_TONE_HALF);
+        cw_sample_count = 0;  // reset to avoid re-triggering on same tone
+        return 1;
+    }
+
+    return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+float cw_tone_get_freq_offset(void)
+{
+    return cw_cfo_est;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+float cw_tone_get_peak(void)
+{
+    return cw_peak_metric;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Fill *buf with CW_TONE_LEN samples of a DC tone (1.0 + 0.0j).
+// *len is set to the total number of complex samples written.
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void cw_tone_get_tx_samples(float complex *buf, int *len)
+{
+    int i;
+    for (i = 0; i < CW_TONE_LEN; i++)
+        buf[i] = 1.0f + 0.0f * _Complex_I;
+    *len = CW_TONE_LEN;
+    fprintf(stderr, "\n[cw_tone] get_tx_samples: len=%d", *len);
+}

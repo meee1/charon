@@ -37,7 +37,7 @@
 #include "pluto.h"
 #include "ethernet.h"
 #include "tap_device.h"
-#include "pss_sync.h"
+#include "cw_tone.h"
 
 static unsigned int ofdm_M;
 static unsigned int ofdm_cp_len;
@@ -152,19 +152,15 @@ int do_ofdm_tx( uint8_t *buffer, int len, int is_retrans, int do_dump_rx, int is
 do_send:
   timer_reset(timer1);
 
-  // Transmit PSS preamble (LTE-style Zadoff-Chu sequence with multiple
-  // frequency offset hypotheses on the receiver side).  This allows the
-  // remote receiver to acquire coarse CFO before the OFDM PLCP kicks in.
-  // The PSS (PSS_TX_MAX_SAMPLES = 126 samples) is sent in OFDM_M+CP_LEN
-  // chunks because pluto_transmit() operates at that hardware buffer
-  // granularity; the final chunk is zero-padded to fill the slot.
+  // Transmit CW tone for coarse CFO estimation.  The tone precedes the
+  // OFDM frame so the remote receiver can acquire frequency offset before
+  // the OFDM PLCP kicks in.
   {
-    static float complex pss_buf[PSS_TX_MAX_SAMPLES];
-    int pss_len = 0;
-    int pi;
-    pss_sync_get_tx_samples(pss_buf, &pss_len);
-    fprintf(stderr, "\n[ofdm_tx] PSS preamble: pss_len=%d", pss_len);
-    pluto_transmit(pss_buf, pss_len, 0, 0);
+    static float complex cw_buf[CW_TONE_TX_MAX_SAMPLES];
+    int cw_len = 0;
+    cw_tone_get_tx_samples(cw_buf, &cw_len);
+    fprintf(stderr, "\n[ofdm_tx] CW tone: cw_len=%d", cw_len);
+    pluto_transmit(cw_buf, cw_len, 0, 0);
   }
 
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, ofdm_payload, tlen);
