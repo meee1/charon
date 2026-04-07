@@ -484,7 +484,10 @@ void pluto_set_xo_correction(long long xo_hz) {
 void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
   double cfo_hz = (double)cfo_cycles_per_sample * (double)sample_freq_hz;
   double xo_delta = cfo_hz * ((double)XO_BASE_HZ / (double)freq_rxtx_hz);
-  long long new_xo = current_xo_correction - (long long)round(xo_delta);
+  // Apply half the correction: when two radios both measure and correct the
+  // same CFO simultaneously, each shifting by half ensures the total
+  // correction equals the full offset and they converge without oscillating.
+  long long new_xo = current_xo_correction - (long long)round(xo_delta * 0.5);
 
   fprintf(stderr, "\n[pluto] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
           cfo_hz, xo_delta, new_xo, current_xo_correction);
