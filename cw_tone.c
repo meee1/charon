@@ -48,8 +48,14 @@
 #define CW_TONE_LEN          128
 #define CW_TONE_HALF         (CW_TONE_LEN / 2)
 #define CW_TONE_COARSE_LAG   4
-#define CW_TONE_CORR_THRESH  0.85f
+#define CW_TONE_CORR_THRESH  0.98f
 #define CW_TONE_PWR_THRESH   1e-6f
+// Max plausible CFO in cycles/sample (5 kHz at 1.4 MHz sample rate)
+#define CW_TONE_MAX_CFO      (5000.0f / 1400000.0f)
+
+// After reset, skip this many samples before allowing detection.
+// Two buffer fills: first absorbs LO/AGC settling transient, second correlates.
+#define CW_TONE_BLANKING     (CW_TONE_LEN * 2)
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -60,6 +66,7 @@ static int           cw_buf_idx;
 static int           cw_sample_count;
 static float         cw_cfo_est;
 static float         cw_peak_metric;
+static int           cw_detected;      // latch: once detected, stop until reset
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -76,6 +83,7 @@ void cw_tone_init(void)
     cw_sample_count = 0;
     cw_cfo_est     = 0.0f;
     cw_peak_metric = 0.0f;
+    cw_detected    = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -87,6 +95,7 @@ void cw_tone_reset(void)
     cw_sample_count = 0;
     cw_cfo_est     = 0.0f;
     cw_peak_metric = 0.0f;
+    cw_detected    = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,13 +112,19 @@ int cw_tone_execute(float complex sample)
 {
     int n;
 
+    // Once detected, stop correlating until cw_tone_reset() re-arms.
+    // This prevents noise false-positives from continuously setting the NCO.
+    if (cw_detected)
+        return 0;
+
     cw_buf[cw_buf_idx] = sample;
     cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
+    cw_sample_count++;
 
-    if (cw_sample_count < CW_TONE_LEN) {
-        cw_sample_count++;
+    // Only correlate once per full buffer fill (every CW_TONE_LEN samples),
+    // and skip the blanking window after reset to let LO/AGC settle.
+    if (cw_sample_count < CW_TONE_BLANKING)
         return 0;
-    }
 
     // --- Stage 1: Coarse CFO estimation (lag-4, ±175 kHz capture range) ---
     int coarse_pairs = CW_TONE_LEN - CW_TONE_COARSE_LAG;
@@ -125,6 +140,9 @@ int cw_tone_execute(float complex sample)
     for (n = 0; n < CW_TONE_LEN; n++)
         power += crealf(cw_buf[n] * conjf(cw_buf[n]));
 
+    // Reset count so next correlation waits for a fresh buffer
+    cw_sample_count = CW_TONE_BLANKING - CW_TONE_LEN;
+
     if (power < CW_TONE_PWR_THRESH)
         return 0;
 
@@ -136,6 +154,10 @@ int cw_tone_execute(float complex sample)
         return 0;
 
     float coarse_cfo = cargf(autocorr_coarse) / (2.0f * (float)M_PI * (float)CW_TONE_COARSE_LAG);
+
+    // Reject coarse CFO that exceeds plausible range (transient artifact)
+    if (fabsf(coarse_cfo) > CW_TONE_MAX_CFO)
+        return 0;
 
     // --- Stage 2: Fine CFO estimation (lag-64, after de-rotation) ---
     float complex derot_buf[CW_TONE_LEN];
@@ -155,7 +177,7 @@ int cw_tone_execute(float complex sample)
     float fine_cfo = cargf(autocorr_fine) / (2.0f * (float)M_PI * (float)CW_TONE_HALF);
 
     cw_cfo_est = coarse_cfo + fine_cfo;
-    cw_sample_count = 0;  // reset to avoid re-triggering on same tone
+    cw_detected = 1;
     return 1;
 }
 
@@ -183,5 +205,5 @@ void cw_tone_get_tx_samples(float complex *buf, int *len)
     for (i = 0; i < CW_TONE_LEN; i++)
         buf[i] = 1.0f + 0.0f * _Complex_I;
     *len = CW_TONE_LEN;
-    fprintf(stderr, "\n[cw_tone] get_tx_samples: len=%d", *len);
+    //fprintf(stderr, "\n[cw_tone] get_tx_samples: len=%d", *len);
 }

@@ -47,6 +47,7 @@
 #include "ofdm.h"
 #include "util.h"
 #include "config.h"
+#include "cw_tone.h"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -244,8 +245,10 @@ void do_send_ack(uint8_t *ack_mac) {
 
   pluto_set_out_gain( -80 );
 
+  ofdm_rx_apply_pending_xo();  // apply deferred XO correction while stream is idle
   enable_rx();
   ofdm_rx_reset();
+  cw_tone_reset();
   usleep(200);
 
   fprintf(stderr, "\nSENT ACK TO ->%02x:%02x:%02x:%02x:%02x:%02x",
@@ -300,8 +303,10 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
   if(tx_retry>0 && !is_broadcast) fprintf(stderr,", tx_retry=%d", (max_retrans+1-tx_retry));
 
   pluto_set_out_gain( -80 );
+  ofdm_rx_apply_pending_xo();  // apply deferred XO correction while stream is idle
   enable_rx();
   ofdm_rx_reset();
+  cw_tone_reset();
   usleep(200);
 
 

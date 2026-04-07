@@ -349,6 +349,9 @@ is_accept=0;
 
   if(total_good_frames>0) per = (float) ( (float) total_bad_frames / (float) (total_good_frames+total_bad_frames)) * 100.0f;
 
+  // Frame is complete — safe to apply deferred XO correction now.
+  ofdm_rx_apply_pending_xo();
+
   return 0;
 }
 
@@ -375,22 +378,39 @@ void init_ofdm_rx(void) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Pending XO correction from last CW tone detection — applied after the
+// OFDM frame completes (or next TX) so the PLL re-lock doesn't disrupt
+// the current frame's IQ stream.
+static float pending_xo_cfo = 0.0f;
+static int   pending_xo_valid = 0;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void ofdm_rx_apply_pending_xo(void) {
+  if (pending_xo_valid) {
+    pluto_apply_pss_xo_correction(pending_xo_cfo);
+    pending_xo_valid = 0;
+    pending_xo_cfo = 0.0f;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_rx(float complex sample) {
   // While the frame-synchronizer is hunting for the PLCP preamble, run the
-  // PSS correlator in parallel.  If a PSS preamble is detected the estimated
-  // CFO is applied to the inner NCO so that the subsequent PLCP sync has a
-  // better frequency starting point.  When the CFO is nonzero, also adjust
-  // the AD9361 xo_correction (40 MHz base clock) so the hardware LO and
-  // sample rates converge toward the correct values.
+  // CW tone correlator in parallel.  If a CW tone is detected, apply the
+  // estimated CFO to the inner NCO so that the subsequent PLCP sync has a
+  // better frequency starting point.  The XO correction is deferred until
+  // after the frame completes to avoid PLL re-lock disrupting the IQ stream.
   if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
     if (cw_tone_execute(sample)) {
       float cfo = cw_tone_get_freq_offset();   // cycles/sample
       nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
+      // Defer XO correction — applying it now would cause PLL re-lock
+      // and corrupt the OFDM frame that immediately follows the CW tone.
       if (cfo != 0.0f) {
-        pluto_apply_pss_xo_correction(cfo);
-        // XO correction has absorbed the CFO into the hardware clock —
-        // reset the internal NCO so it doesn't double-correct.
-        nco_crcf_set_frequency(_qq->nco_rx, 0.0f);
+        pending_xo_cfo = cfo;
+        pending_xo_valid = 1;
       }
       fprintf(stderr, "\nCW_TONE: CFO=%.6f rad/samp (%.1f Hz, metric=%.3f)",
               2.0f * (float)M_PI * cfo,

@@ -178,8 +178,8 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
-      fprintf(stderr, "\n[pluto] creating RX buffer (1400 samples)...");
-      rxbuf = iio_device_create_buffer(rx_dev, 1400, false);
+      fprintf(stderr, "\n[pluto] creating RX buffer (14000 samples)...");
+      rxbuf = iio_device_create_buffer(rx_dev, 14000, false);
 
 
       if (!rxbuf) {
@@ -276,7 +276,7 @@ long long pluto_get_in_rssi(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void enable_rx() {
 
-  fprintf(stderr, "\n[pluto] enabling RX at %lld Hz", current_rx_freq);
+  //fprintf(stderr, "\n[pluto] enabling RX at %lld Hz", current_rx_freq);
   iio_channel_attr_write_longlong(
       phy_altvoltage0,
       "frequency",
@@ -286,7 +286,7 @@ void enable_rx() {
 ///////////////////////////////////////////////////////////////////////////////////////
 void disable_rx() {
 
-  fprintf(stderr, "\n[pluto] disabling RX (detuning +20 MHz from %lld Hz)", current_rx_freq);
+  //fprintf(stderr, "\n[pluto] disabling RX (detuning +20 MHz from %lld Hz)", current_rx_freq);
   prev_gain = pluto_get_in_gain();
 
   iio_channel_attr_write_longlong(
@@ -379,7 +379,7 @@ void pluto_set_in_sample_freq(long long sfreq) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_set_out_gain(long long gain) {
 
-  fprintf(stderr, "\n[pluto] setting TX gain: %lld dB", gain);
+  //fprintf(stderr, "\n[pluto] setting TX gain: %lld dB", gain);
   iio_channel_attr_write_longlong(
       phy_voltage0_out,
       "hardwaregain",
@@ -482,7 +482,27 @@ void pluto_set_xo_correction(long long xo_hz) {
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
+  static struct timeval last_correction_tv;
+  static int has_last_correction = 0;
+
+  // Debounce: allow XO to settle before applying another correction
+  if (has_last_correction) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    long long elapsed_us = (now.tv_sec - last_correction_tv.tv_sec) * 1000000LL
+                         + (now.tv_usec - last_correction_tv.tv_usec);
+    if (elapsed_us < 500000LL) // 500 ms
+      return;
+  }
+
   double cfo_hz = (double)cfo_cycles_per_sample * (double)sample_freq_hz;
+
+  // Reject obviously bogus CFO estimates (transient artifacts, noise)
+  if (fabs(cfo_hz) > 5000.0) {
+    fprintf(stderr, "\n[pluto] PSS XO correction: REJECTED CFO=%.1f Hz (exceeds 5 kHz limit)", cfo_hz);
+    return;
+  }
+
   double xo_delta = cfo_hz * ((double)XO_BASE_HZ / (double)freq_rxtx_hz);
   // Apply half the correction: when two radios both measure and correct the
   // same CFO simultaneously, each shifting by half ensures the total
@@ -491,8 +511,10 @@ void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
 
   fprintf(stderr, "\n[pluto] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
           cfo_hz, xo_delta, new_xo, current_xo_correction);
-
-  pluto_set_xo_correction(new_xo);
+  if (abs(new_xo - current_xo_correction) > 20)
+    pluto_set_xo_correction(new_xo);
+  gettimeofday(&last_correction_tv, NULL);
+  has_last_correction = 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -579,7 +601,7 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
     if(is_last) {
 
       //zero pad the remaining buffer before final push
-      fprintf(stderr, "\n[pluto] TX: zero padding final buffer, %td bytes to end of buffer", (tx_p_end - tx_p_dat)/tx_p_inc);
+      //fprintf(stderr, "\n[pluto] TX: zero padding final buffer, %td bytes to end of buffer", (tx_p_end - tx_p_dat)/tx_p_inc);
       while(tx_p_dat != tx_p_end) {
         ((int16_t*)tx_p_dat)[0] = 0;
         ((int16_t*)tx_p_dat)[1] = 0;
