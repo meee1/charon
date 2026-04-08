@@ -43,6 +43,11 @@
 #include "../ethernet.h"
 #include "../tap_device.h"
 
+// OFDMFRAMESYNC_STATE_SEEKPLCP is an anonymous enum inside
+// struct ofdmframesync_s (ofdm.h) — not accessible as a standalone
+// identifier.  Define it here for test assertions.
+#define OFDMFRAMESYNC_STATE_SEEKPLCP 0
+
 // Shim counters declared in ofdm_test_shims.c
 extern int pluto_transmit_call_count;
 extern int pluto_transmit_last_is_last;
