@@ -186,6 +186,65 @@ static void test_dup_zero_pid_behavior(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Additional CRC-32 tests
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_crc32_incremental_matches_bulk(void)
+{
+    TEST_BEGIN("crc32: incremental computation matches single bulk call");
+    uint8_t data[] = "Hello, world! This is a test of incremental CRC computation.";
+    int32_t len = (int32_t)strlen((char *)data);
+    int32_t half = len / 2;
+
+    // Bulk computation
+    crc32_val = 0;
+    uint32_t bulk = crc32_range(data, len);
+
+    // Incremental: two halves
+    crc32_val = 0;
+    crc32_range(data, half);
+    uint32_t incremental = crc32_range(data + half, len - half);
+
+    TEST_ASSERT_MSG(bulk == incremental,
+                    "incremental CRC must match bulk CRC");
+    TEST_PASS();
+}
+
+static void test_crc32_all_same_bytes(void)
+{
+    TEST_BEGIN("crc32: repeated 0xFF bytes produce nonzero, deterministic CRC");
+    uint8_t buf[64];
+    memset(buf, 0xFF, sizeof(buf));
+
+    crc32_val = 0;
+    uint32_t r1 = crc32_range(buf, sizeof(buf));
+
+    crc32_val = 0;
+    uint32_t r2 = crc32_range(buf, sizeof(buf));
+
+    TEST_ASSERT(r1 != 0);
+    TEST_ASSERT(r1 == r2);
+    TEST_PASS();
+}
+
+static void test_crc32_length_changes_crc(void)
+{
+    TEST_BEGIN("crc32: appending one byte produces a different CRC");
+    uint8_t data[] = "length sensitivity test";
+    int32_t len = (int32_t)strlen((char *)data);
+
+    crc32_val = 0;
+    uint32_t r_short = crc32_range(data, len);
+
+    crc32_val = 0;
+    uint32_t r_long = crc32_range(data, len + 1);  // includes NUL terminator
+
+    TEST_ASSERT_MSG(r_short != r_long,
+                    "adding one byte must change the CRC");
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // main
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -198,6 +257,9 @@ int main(void)
     RUN_TEST(test_crc32_different_data);
     RUN_TEST(test_crc32_empty);
     RUN_TEST(test_crc32_single_byte);
+    RUN_TEST(test_crc32_incremental_matches_bulk);
+    RUN_TEST(test_crc32_all_same_bytes);
+    RUN_TEST(test_crc32_length_changes_crc);
 
     RUN_TEST(test_dup_initially_empty);
     RUN_TEST(test_dup_detect_added);
