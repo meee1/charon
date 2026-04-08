@@ -35,8 +35,35 @@ test_cw_cfo_detection: test_cw_cfo_detection.c test_harness.h ../cw_tone.c ../cw
 test_pss_sync: test_pss_sync.c test_harness.h ../pss_sync.c ../pss_sync.h ../ofdm_conf.h
 	$(CC) $(CFLAGS) -o $@ test_pss_sync.c $(LDFLAGS)
 
-test_ofdm: test_ofdm.c test_harness.h stubs/iio.h stubs/fftw3.h ../ofdm_tx.c ../ofdm_rx.c ../cw_tone.c ../timers.c ../ofdm_conf.h ../ofdm.h ../ethernet.h
-	$(CC) $(OFDM_CFLAGS) -o $@ test_ofdm.c $(OFDM_LDFLAGS)
+# OFDM test: compile each source as a separate object to avoid
+# header re-inclusion conflicts (auto-generated headers lack guards).
+OFDM_OBJS = ofdm_build/test_ofdm.o ofdm_build/ofdm_test_shims.o \
+            ofdm_build/ofdm_tx.o ofdm_build/ofdm_rx.o \
+            ofdm_build/cw_tone.o ofdm_build/timers.o
+
+ofdm_build:
+	mkdir -p ofdm_build
+
+ofdm_build/test_ofdm.o: test_ofdm.c test_harness.h ../ofdm_conf.h ../ofdm_tx.h ../ofdm_rx.h ../ethernet.h ../tap_device.h | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ test_ofdm.c
+
+ofdm_build/ofdm_test_shims.o: ofdm_test_shims.c | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ ofdm_test_shims.c
+
+ofdm_build/ofdm_tx.o: ../ofdm_tx.c ../ofdm_conf.h ../ofdm_tx.h ../ethernet.h | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ ../ofdm_tx.c
+
+ofdm_build/ofdm_rx.o: ../ofdm_rx.c ../ofdm_conf.h ../ofdm_rx.h ../ofdm.h ../ethernet.h | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ ../ofdm_rx.c
+
+ofdm_build/cw_tone.o: ../cw_tone.c ../cw_tone.h ../ofdm_conf.h | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ ../cw_tone.c
+
+ofdm_build/timers.o: ../timers.c ../timers.h | ofdm_build
+	$(CC) $(OFDM_CFLAGS) -c -o $@ ../timers.c
+
+test_ofdm: $(OFDM_OBJS)
+	$(CC) -o $@ $(OFDM_OBJS) $(OFDM_LDFLAGS)
 
 check: $(TESTS)
 	@echo "==================================="
@@ -63,5 +90,6 @@ check: $(TESTS)
 
 clean:
 	rm -f $(TESTS)
+	rm -rf ofdm_build
 
 .PHONY: all check clean
