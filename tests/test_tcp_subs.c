@@ -334,6 +334,144 @@ static void test_tcp_subs_opt_end_terminates(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Additional do_tcp_subs tests
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_tcp_subs_udp_ip_not_rewritten(void)
+{
+    TEST_BEGIN("do_tcp_subs: UDP IP frame returns 0 (no TCP rewriting)");
+    uint8_t buf[256];
+    memset(buf, 0, sizeof(buf));
+
+    eth_frame *ef = (eth_frame *)buf;
+    ef->ethhdr.eth_type = htons(ETH_IP_TYPE);
+    ef->iphdr.version = 0x45;
+    ef->iphdr.proto = IP_PROTO_UDP;
+    ef->iphdr.len = htons(sizeof(ip_hdr) + 8);  // minimal UDP
+
+    int result = do_tcp_subs(buf);
+    TEST_ASSERT_MSG(result == 0, "UDP frame should return 0 from do_tcp_subs");
+    TEST_PASS();
+}
+
+static void test_tcp_subs_tcp_rst_no_mss_rewrite(void)
+{
+    TEST_BEGIN("do_tcp_subs: TCP RST frame gets window rewritten but not MSS");
+    uint8_t buf[256];
+    // Build a SYN frame first so MSS option is present, then change flags to RST
+    build_tcp_syn_frame(buf, sizeof(buf), 8960, 0);
+
+    eth_frame *ef = (eth_frame *)buf;
+    tcp_hdr *tcp = (tcp_hdr *)&ef->ip_proto_payload;
+    tcp->tcp_flags = TCP_RST;  // RST is neither SYN nor SYN|ACK, so sub_mss() is skipped but the window is still rewritten
+
+    do_tcp_subs(buf);
+
+    // MSS should NOT have been rewritten (only SYN/SYN-ACK triggers sub_mss)
+    uint8_t *opts = tcp->payload;
+    TEST_ASSERT(opts[0] == TCP_OPT_MSS);
+    uint16_t mss = (opts[2] << 8) | opts[3];
+    TEST_ASSERT_MSG(mss == 8960, "MSS should be unchanged for non-SYN TCP frame");
+
+    // Window SHOULD have been rewritten
+    uint16_t expected_win = max_tcp_segs * 1460;
+    TEST_ASSERT_MSG(htons(tcp->win_size) == expected_win,
+                    "window should be rewritten even for RST");
+    TEST_PASS();
+}
+
+static void test_tcp_subs_max_segs_one(void)
+{
+    TEST_BEGIN("do_tcp_subs: max_tcp_segs=1 sets window to exactly one MSS");
+    uint8_t buf[256];
+    build_tcp_syn_frame(buf, sizeof(buf), 1460, 0);
+
+    eth_frame *ef = (eth_frame *)buf;
+    tcp_hdr *tcp = (tcp_hdr *)&ef->ip_proto_payload;
+
+    int saved_max = max_tcp_segs;
+    max_tcp_segs = 1;
+    do_tcp_subs(buf);
+    max_tcp_segs = saved_max;
+
+    uint16_t actual = htons(tcp->win_size);
+    TEST_ASSERT_MSG(actual == 1460, "window should be 1 * 1460 = 1460 bytes");
+    TEST_PASS();
+}
+
+static void test_tcp_subs_sack_option_skipped(void)
+{
+    TEST_BEGIN("do_tcp_subs: SACK-permitted option (kind=4,len=2) is skipped cleanly");
+    uint8_t buf[256];
+    memset(buf, 0, sizeof(buf));
+
+    eth_frame *ef = (eth_frame *)buf;
+    ef->ethhdr.eth_type = htons(ETH_IP_TYPE);
+    ef->iphdr.version = 0x45;
+    ef->iphdr.proto = IP_PROTO_TCP;
+
+    tcp_hdr *tcp = (tcp_hdr *)&ef->ip_proto_payload;
+    tcp->tcp_flags = TCP_SYN;
+    tcp->win_size = htons(65535);
+
+    // Options: MSS(4 bytes) | SACK-PERMITTED(2 bytes) | END | pad
+    uint8_t *opts = tcp->payload;
+    int off = 0;
+    opts[off++] = TCP_OPT_MSS;   // kind=2
+    opts[off++] = 4;
+    opts[off++] = (8960 >> 8) & 0xff;
+    opts[off++] = 8960 & 0xff;
+    opts[off++] = TCP_OPT_SACK;  // kind=4 (SACK-permitted)
+    opts[off++] = 2;              // len=2
+    opts[off++] = TCP_OPT_END;
+    opts[off++] = 0;              // pad
+
+    int tcp_hdr_len = 20 + off;
+    tcp->hdr_len = (tcp_hdr_len / 4) << 4;
+    ef->iphdr.len = htons(sizeof(ip_hdr) + tcp_hdr_len);
+
+    // Must not crash and must rewrite MSS
+    do_tcp_subs(buf);
+
+    uint16_t new_mss = (opts[2] << 8) | opts[3];
+    TEST_ASSERT_MSG(new_mss == 1460, "MSS should be rewritten even with SACK option present");
+
+    // SACK option bytes should be unchanged (the default case skips them)
+    TEST_ASSERT_MSG(opts[4] == TCP_OPT_SACK, "SACK kind byte should be untouched");
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Direct checksum function tests
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_tcpchksum_called_for_complete_frame(void)
+{
+    TEST_BEGIN("tcpchksum: produces nonzero value for a non-SYN TCP frame");
+    uint8_t buf[256];
+    memset(buf, 0, sizeof(buf));
+
+    eth_frame *ef = (eth_frame *)buf;
+    ef->ethhdr.eth_type = htons(ETH_IP_TYPE);
+    ef->iphdr.version = 0x45;
+    ef->iphdr.proto = IP_PROTO_TCP;
+    // Set real source/dest to get a non-trivial checksum
+    ef->iphdr.src_ip = 0x0100007f;  // 127.0.0.1
+    ef->iphdr.dst_ip = 0x0200007f;  // 127.0.0.2
+    ef->iphdr.len = htons(sizeof(ip_hdr) + 20);  // minimal TCP
+
+    tcp_hdr *tcp = (tcp_hdr *)&ef->ip_proto_payload;
+    tcp->tcp_flags = TCP_ACK;
+    tcp->hdr_len = (20 / 4) << 4;
+    tcp->src_port = htons(12345);
+    tcp->dst_port = htons(80);
+
+    uint16_t cksum = tcpchksum(buf);
+    TEST_ASSERT_MSG(cksum != 0, "tcpchksum should be nonzero for a real frame");
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // main
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -353,6 +491,11 @@ int main(void)
     RUN_TEST(test_tcp_subs_non_syn_only_window);
     RUN_TEST(test_tcp_subs_synack_rewrites_mss);
     RUN_TEST(test_tcp_subs_opt_end_terminates);
+    RUN_TEST(test_tcp_subs_udp_ip_not_rewritten);
+    RUN_TEST(test_tcp_subs_tcp_rst_no_mss_rewrite);
+    RUN_TEST(test_tcp_subs_max_segs_one);
+    RUN_TEST(test_tcp_subs_sack_option_skipped);
+    RUN_TEST(test_tcpchksum_called_for_complete_frame);
 
     TEST_SUMMARY();
     return TEST_EXIT_CODE();
