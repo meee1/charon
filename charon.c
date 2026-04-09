@@ -328,6 +328,11 @@ void lbt_backoff(void) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void check_agc(void) {
 
+    rssi = pluto_get_in_rssi();
+    in_gain = pluto_get_in_gain();
+
+    fprintf(stderr, "\nnoise_floor: %.1f dB, RSSI: %lld, in_gain %lld", cw_tone_get_noise_floor(), rssi, in_gain);
+
   if( timer_elapsed_usec(agc_timer_fast) > 10000) {
 
     rssi = pluto_get_in_rssi();
@@ -343,12 +348,7 @@ void check_agc(void) {
   }
 
   if( timer_elapsed_usec(agc_timer_slow) > 1000000) {
-
-    rssi = pluto_get_in_rssi();
-    in_gain = pluto_get_in_gain();
-
     if( in_gain < 73) {
-      fprintf(stderr, "\ncurrent RSSI: %lld, in_gain %lld", rssi, in_gain);
       pluto_set_in_gain(73);
       pluto_set_in_gain_auto_fast();
 

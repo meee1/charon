@@ -178,8 +178,8 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
-      fprintf(stderr, "\n[pluto] creating RX buffer (14000 samples)...");
-      rxbuf = iio_device_create_buffer(rx_dev, 14000, false);
+      fprintf(stderr, "\n[pluto] creating RX buffer (70000 samples)...");
+      rxbuf = iio_device_create_buffer(rx_dev, 70000, false);
 
 
       if (!rxbuf) {
@@ -648,10 +648,11 @@ int pluto_receive() {
     more_data=1;
   }
 
-  if(false && p_inc == 4 && n_rx > 0) {
+  if(p_inc == 4 && n_rx > 0) {
     // fast path: samples are contiguous int16 IQ pairs
     int avail = (p_end - p_dat) / 4;
     if(avail > n_rx) avail = n_rx;
+    rx_sample_count += avail;
     do_process_iq16_batch((const int16_t*)p_dat, avail);
     p_dat += avail * 4;
     n_rx -= avail;

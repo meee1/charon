@@ -7,4 +7,5 @@ void cw_tone_reset(void);
 int cw_tone_execute(float complex sample);
 float cw_tone_get_freq_offset(void);
 float cw_tone_get_peak(void);
+float cw_tone_get_noise_floor(void);
 void cw_tone_get_tx_samples(float complex *buf,int *len);

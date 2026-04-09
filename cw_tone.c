@@ -62,6 +62,13 @@ static float         cw_cfo_est;
 static float         cw_peak_metric;
 static int           cw_detected;      // latch: once detected, stop until reset
 
+// Sliding-window accumulators — updated incrementally per sample (O(1))
+// instead of recomputing the full sum each time (O(N)).
+static float complex cw_autocorr;      // lag-CW_TONE_COARSE_LAG autocorrelation
+static float         cw_power;         // total power in the buffer
+
+static float         cw_noise_floor;   // last valid noise floor (dB), survives reset
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -78,6 +85,9 @@ void cw_tone_init(void)
     cw_cfo_est     = 0.0f;
     cw_peak_metric = 0.0f;
     cw_detected    = 0;
+    cw_autocorr    = 0.0f + 0.0f * _Complex_I;
+    cw_power       = 0.0f;
+    cw_noise_floor = -200.0f;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -90,6 +100,8 @@ void cw_tone_reset(void)
     cw_cfo_est     = 0.0f;
     cw_peak_metric = 0.0f;
     cw_detected    = 0;
+    cw_autocorr    = 0.0f + 0.0f * _Complex_I;
+    cw_power       = 0.0f;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,42 +123,72 @@ int cw_tone_execute(float complex sample)
     if (cw_detected)
         return 0;
 
+    // The new sample will overwrite cw_buf[cw_buf_idx].  Save the old value
+    // so we can subtract its contributions from the sliding accumulators.
+    float complex old_sample = cw_buf[cw_buf_idx];
+
     cw_buf[cw_buf_idx] = sample;
+
+    if (cw_sample_count < CW_TONE_LEN) {
+        // Still filling the buffer — build up accumulators incrementally.
+        cw_sample_count++;
+        cw_power += crealf(sample) * crealf(sample) + cimagf(sample) * cimagf(sample);
+
+        if (cw_sample_count >= CW_TONE_COARSE_LAG + 1) {
+            // We have at least lag+1 samples, so a new coarse pair exists.
+            int idx_early = (cw_buf_idx - CW_TONE_COARSE_LAG + CW_TONE_LEN) % CW_TONE_LEN;
+            cw_autocorr += sample * conjf(cw_buf[idx_early]);
+        }
+
+        cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
+        return 0;
+    }
+
+    // --- Sliding-window update (O(1) per sample) ---
+    //
+    // The circular buffer is full.  The new sample at position cw_buf_idx
+    // replaces old_sample.  Update power and coarse autocorrelation by
+    // subtracting contributions from old_sample and adding new ones.
+
+    // Power: subtract old, add new
+    cw_power -= crealf(old_sample) * crealf(old_sample) + cimagf(old_sample) * cimagf(old_sample);
+    cw_power += crealf(sample) * crealf(sample) + cimagf(sample) * cimagf(sample);
+
+    // Coarse autocorrelation: R = sum of buf[n+lag] * conj(buf[n])
+    // The pairs affected by replacing buf[idx] are:
+    //   (a) pairs where buf[idx] is the "late" element:  buf[idx] * conj(buf[idx - lag])
+    //   (b) pairs where buf[idx] is the "early" element: buf[idx + lag] * conj(buf[idx])
+    int idx_early_a = (cw_buf_idx - CW_TONE_COARSE_LAG + CW_TONE_LEN) % CW_TONE_LEN;
+    int idx_late_b  = (cw_buf_idx + CW_TONE_COARSE_LAG) % CW_TONE_LEN;
+
+    // Remove old contributions, add new
+    cw_autocorr -= old_sample * conjf(cw_buf[idx_early_a]);
+    cw_autocorr += sample     * conjf(cw_buf[idx_early_a]);
+    cw_autocorr -= cw_buf[idx_late_b] * conjf(old_sample);
+    cw_autocorr += cw_buf[idx_late_b] * conjf(sample);
+
     cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
 
-    // Wait until the circular buffer is full before starting to correlate.
-    if (cw_sample_count < CW_TONE_LEN) {
-        cw_sample_count++;
-        return 0;
-    }
+    // Update noise floor estimate (mean power per sample in dB).
+    if (cw_power > 1e-20f)
+        cw_noise_floor = 10.0f * log10f(cw_power / (float)CW_TONE_LEN);
 
-    // --- Stage 1: Coarse CFO estimation (lag-4, ±175 kHz capture range) ---
+    // --- Stage 1: Coarse detection from sliding accumulators ---
+    if (cw_power < CW_TONE_PWR_THRESH)
+        return 0;
+
     int coarse_pairs = CW_TONE_LEN - CW_TONE_COARSE_LAG;
-    float complex autocorr_coarse = 0.0f + 0.0f * _Complex_I;
-    float power = 0.0f;
-
-    for (n = 0; n < coarse_pairs; n++) {
-        int idx_early = (cw_buf_idx + n) % CW_TONE_LEN;
-        int idx_late  = (cw_buf_idx + n + CW_TONE_COARSE_LAG) % CW_TONE_LEN;
-        autocorr_coarse += cw_buf[idx_late] * conjf(cw_buf[idx_early]);
-    }
-
-    for (n = 0; n < CW_TONE_LEN; n++)
-        power += crealf(cw_buf[n] * conjf(cw_buf[n]));
-
-    if (power < CW_TONE_PWR_THRESH)
-        return 0;
-
-    float power_scaled = power * (float)coarse_pairs / (float)CW_TONE_LEN;
-    float metric = cabsf(autocorr_coarse) / power_scaled;
+    float power_scaled = cw_power * (float)coarse_pairs / (float)CW_TONE_LEN;
+    float metric = cabsf(cw_autocorr) / power_scaled;
     cw_peak_metric = metric;
 
     if (metric < CW_TONE_CORR_THRESH)
         return 0;
 
-    float coarse_cfo = cargf(autocorr_coarse) / (2.0f * (float)M_PI * (float)CW_TONE_COARSE_LAG);
+    float coarse_cfo = cargf(cw_autocorr) / (2.0f * (float)M_PI * (float)CW_TONE_COARSE_LAG);
 
     // --- Stage 2: Fine CFO estimation (lag-64, after de-rotation) ---
+    // Only runs on detection (~once per frame), not per-sample.
     float complex derot_buf[CW_TONE_LEN];
     float derot_phase_inc = -2.0f * (float)M_PI * coarse_cfo;
     float complex phasor = 1.0f + 0.0f * _Complex_I;
@@ -180,6 +222,13 @@ float cw_tone_get_freq_offset(void)
 float cw_tone_get_peak(void)
 {
     return cw_peak_metric;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+float cw_tone_get_noise_floor(void)
+{
+    return cw_noise_floor;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
