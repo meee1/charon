@@ -97,28 +97,6 @@
                 "reveal": "always",
                 "panel": "dedicated"
             }
-        },
-        {
-            "label": "build-charon-host",
-            "type": "shell",
-            "command": "make",
-            "args": [
-                "host"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "presentation": {
-                "reveal": "silent",
-                "panel": "shared"
-            }
         }
     ]
 }

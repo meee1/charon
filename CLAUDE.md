@@ -17,17 +17,11 @@ Named after one of Pluto's moons.
 make
 ```
 
-### Build for host testing (x86_64, no hardware needed)
-```bash
-make host
-```
-This produces `charon-host`, which connects to a remote PlutoSDR over the network via libiio (IIO daemon). All RF operations (AD9361 config, IQ streaming, gain, AGC) work identically to on-device — the difference is IIO commands travel over the network. See `HOST_MODE.md` for URI options and integration details.
-
 ### Build example programs
 ```bash
 cd example && make
 ```
-Builds `ofdm_loopback_example` (TX/RX loopback test), `ofdm_file_transfer` (multi-frame simulation), `pss_sync_example` (PSS frequency-offset sync demo), and `ofdm_channel_test` (channel impairment test). Note: examples use QAM-16 modulation for demonstration; production Charon uses QPSK (see `ofdm_conf.h`).
+Builds `ofdm_loopback_example` (TX/RX loopback test), `ofdm_file_transfer` (multi-frame simulation), and `ofdm_channel_test` (channel impairment test). Note: examples use QAM-16 modulation for demonstration; production Charon uses QPSK (see `ofdm_conf.h`).
 
 ### Full firmware image
 ```bash
@@ -39,7 +33,6 @@ cd plutosdr-fw && make
 ### Clean
 ```bash
 make clean        # ARM build artifacts in .build/
-make -f Makefile.host clean  # Host build artifacts in .build_host/
 ```
 
 ## Project Structure
@@ -47,7 +40,6 @@ make -f Makefile.host clean  # Host build artifacts in .build_host/
 ```
 charon.c          Main event loop, MAC layer (CSMA/LBT), ACK/retransmission state machine
 pluto.c           PlutoSDR hardware interface via libiio/AD9361 (AGC, frequency, gain)
-pluto_host.c      Host-mode replacement: remote PlutoSDR via libiio network context
 ofdm_tx.c         OFDM frame modulation using liquid-dsp ofdmflexframegen
 ofdm_rx.c         OFDM frame demodulation using liquid-dsp ofdmflexframesync
 tap_device.c      TAP network device (ofdm0) creation, bridge setup, frame wrapping
@@ -62,7 +54,6 @@ glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_
 
 cw_tone.c         CW tone CFO estimator — TX generates 128-sample DC tone, RX detects
                   via lag-64 autocorrelation and estimates carrier frequency offset
-pss_sync.c        Legacy PSS Zadoff-Chu correlator (replaced by cw_tone.c, retained for reference)
 
 ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 1x decimation)
 ofdm.h            liquid-dsp internal struct definitions
@@ -70,7 +61,7 @@ ethernet.h        Ethernet frame structures
 
 filters/pluto/    Pre-calculated FIR filter coefficients (131 KB)
 third_party/      Bundled libfec (FEC) and libtuntap (TAP device)
-example/          Host-mode loopback and file transfer examples
+example/          Loopback and file transfer examples
   QUICKREF.md     Quick reference for example build and usage
   PACKAGE.md      Packaging notes
   test.sh         Automated test script
@@ -101,15 +92,14 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 ### CFO Estimation (`cw_tone.c`)
 
-A single CW (continuous wave) DC tone is used for carrier frequency offset estimation,
-replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for the Cortex-A9.
+A single CW (continuous wave) DC tone is used for carrier frequency offset estimation.
 
 - **TX**: 128 samples of DC tone (`1.0 + 0.0j`) transmitted before each OFDM frame
 - **RX**: While in SEEKPLCP state, a lag-64 autocorrelation detects the tone and estimates CFO:
   `cfo = arg(R(64)) / (2*pi*64)` in cycles/sample
 - **Detection threshold**: Normalized autocorrelation metric `|R|/(P/2)` >= 0.85
 - **Correction**: CFO applied to liquid-dsp NCO and hardware XO (`pluto_apply_pss_xo_correction`)
-- **Cost**: ~4 multiply-adds per sample (vs ~441 for the old PSS multi-hypothesis correlator)
+- **Cost**: ~4 multiply-adds per sample
 - **Over-the-air frame**: `[CW tone 128 samples] [OFDM PLCP + data]`
 
 ### MAC Layer Detail (`charon.c`)
@@ -152,11 +142,6 @@ replacing the earlier PSS Zadoff-Chu correlator which was too CPU-intensive for 
   - Statically links: libliquid.a, libfftw3f.a, libfec, libtuntap
   - Dynamically links: libc, libiio, libad9361, libini, libusb-1.0, libserialport, libavahi-client, libavahi-common, libxml2, libz, libdbus-1
   - Linker wraps `__isoc23_strtol`, `__isoc23_strtoll`, `__isoc23_strtoul`, `__isoc23_strtoull` via `glibc_compat.c`
-- `Makefile.host` — Native host build with system gcc
-  - Compiler flags: `-O0 -std=gnu99 -ggdb -D_FILE_OFFSET_BITS=64`
-  - Output directory: `.build_host/`
-  - Uses `pluto_host.c` instead of `pluto.c` (remote IIO via network)
-  - Dynamically links all libraries (libiio, libad9361, liquid-dsp, fftw3, etc.)
 - `tests/Makefile` — Unit tests with system gcc
   - Compiler flags: `-Wall -Wextra -O0 -g -std=gnu99`
   - Each test `#include`s the source `.c` directly — no separate library step
@@ -206,17 +191,9 @@ cd tests && make check
 ### Example programs (`example/` directory)
 - `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF (uses QAM-16)
 - `ofdm_file_transfer` — simulates multi-frame file transfer
-- `pss_sync_example` — PSS Zadoff-Chu sync demonstration
 - `ofdm_channel_test` — OFDM under channel impairments
 - Run: `cd example && make && ./ofdm_loopback_example`
 - Automated tests: `cd example && ./test.sh`
-
-### Host mode (`make host`)
-- Produces `charon-host` connecting to a remote PlutoSDR via libiio network context
-- All RF control (AD9361 config, IQ streaming, gain, AGC, frequency) works over the network
-- Specify PlutoSDR URI: `sudo ./charon-host --uri ip:192.168.2.1`
-- IQ recording/playback: `--save-tx <file>` and `--load-rx <file>`
-- See `HOST_MODE.md` for URI formats and integration details
 
 ### On-device testing (via SSH)
 - `ssh root@192.168.2.1` (password: `analog`)

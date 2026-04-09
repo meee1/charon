@@ -68,13 +68,9 @@ else ifeq "$(SUFFIX)" ".c"
 endif
 
 .SUFFIXES:
-.PHONY: clean host
+.PHONY: clean
 
 all: charon
-
-host:
-	@echo "Building for host architecture..."
-	@$(MAKE) -f Makefile.host
 
 $(OUT): $(OBJ)
 ifeq "$(LIBRARY)" "static"

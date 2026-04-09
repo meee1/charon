@@ -69,17 +69,7 @@ rm -f test_small.txt received_small.txt
 rm -f test_large.bin received_large.bin
 
 echo ""
-echo "Test 4: PSS Sync (LTE-style with multiple frequency offset hypotheses)"
-echo "-----------------------------------------------------------------------"
-if ./pss_sync_example; then
-    echo "✓ PSS sync test PASSED"
-else
-    echo "✗ PSS sync test FAILED"
-    exit 1
-fi
-
-echo ""
-echo "Test 5: OFDM Channel Impairment (AWGN, CFO, phase, multipath)"
+echo "Test 4: OFDM Channel Impairment (AWGN, CFO, phase, multipath)"
 echo "--------------------------------------------------------------"
 if [ -f "./ofdm_channel_test" ]; then
     if ./ofdm_channel_test; then
@@ -101,5 +91,4 @@ echo "Examples are working correctly."
 echo "Try running them individually:"
 echo "  ./ofdm_loopback_example"
 echo "  ./ofdm_file_transfer myfile.txt output.txt"
-echo "  ./pss_sync_example"
 echo ""

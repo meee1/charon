@@ -10,7 +10,7 @@ LDFLAGS = -lm
 OFDM_CFLAGS = $(CFLAGS) -Istubs
 OFDM_LDFLAGS = -lliquid -lfftw3f -lm
 
-TESTS = test_crc test_tcp_subs test_timers test_cw_tone test_cw_tone_channel test_cw_cfo_detection test_pss_sync test_ofdm
+TESTS = test_crc test_tcp_subs test_timers test_cw_tone test_cw_tone_channel test_cw_cfo_detection test_ofdm
 
 all: $(TESTS)
 
@@ -31,9 +31,6 @@ test_cw_tone_channel: test_cw_tone_channel.c test_harness.h ../cw_tone.c ../cw_t
 
 test_cw_cfo_detection: test_cw_cfo_detection.c test_harness.h ../cw_tone.c ../cw_tone.h ../ofdm_conf.h
 	$(CC) $(CFLAGS) -o $@ test_cw_cfo_detection.c $(LDFLAGS)
-
-test_pss_sync: test_pss_sync.c test_harness.h ../pss_sync.c ../pss_sync.h ../ofdm_conf.h
-	$(CC) $(CFLAGS) -o $@ test_pss_sync.c $(LDFLAGS)
 
 # OFDM test: compile each source as a separate object to avoid
 # header re-inclusion conflicts (auto-generated headers lack guards).

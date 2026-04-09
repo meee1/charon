@@ -6,7 +6,7 @@ CFLAGS = -Wall -O2 -g
 LDFLAGS = -lliquid -lm -lfftw3f
 
 # Targets
-TARGETS = ofdm_loopback_example ofdm_file_transfer pss_sync_example ofdm_channel_test
+TARGETS = ofdm_loopback_example ofdm_file_transfer ofdm_channel_test
 
 all: $(TARGETS)
 
@@ -19,11 +19,6 @@ ofdm_file_transfer: ofdm_file_transfer.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built: $@"
 	@echo "Run with: ./$@ <input_file> [output_file]"
-
-pss_sync_example: pss_sync_example.c
-	$(CC) $(CFLAGS) -o $@ $< -lm
-	@echo "Built: $@"
-	@echo "Run with: ./$@"
 
 ofdm_channel_test: ofdm_channel_test.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
@@ -51,6 +46,5 @@ help:
 	@echo "Examples:"
 	@echo "  ofdm_loopback_example - OFDM TX/RX loopback test"
 	@echo "  ofdm_file_transfer    - File transfer over OFDM simulation"
-	@echo "  pss_sync_example      - LTE-style PSS sync with freq-offset hypotheses"
 
 .PHONY: all clean install-deps help

@@ -57,3 +57,4 @@ tests/test_timers
 tests/test_cw_tone
 tests/test_cw_tone_channel
 tests/test_cw_cfo_detection
+charon
