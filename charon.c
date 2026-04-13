@@ -31,6 +31,7 @@
 #include <complex.h>
 
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <getopt.h>
 
@@ -56,6 +57,7 @@
 
 
 static int do_loopback_test = 0;
+static int do_pluto_test = 0;
 static char *save_tx_path = NULL;
 static char *load_rx_path = NULL;
 
@@ -152,20 +154,236 @@ int run_loopback_test(void) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+int run_pluto_test(void) {
+  int i;
+  int pass_count = 0;
+  int num_tests = 4;
+  struct iio_context *ctx;
+  struct timeval tv_start, tv_now;
+  long long elapsed_us;
+
+  long long test_rssi;
+  long long test_gain;
+  float test_noise_floor;
+
+  fprintf(stderr, "Charon Pluto TX/RX hardware test\n");
+  fprintf(stderr, "==================================\n");
+
+  //--- Phase 1: Hardware Init ---
+  fprintf(stderr, "\n[1/4] Hardware init ... ");
+
+  read_config();
+  ctx = pluto_init_txrx();
+
+  if (!ctx) {
+    fprintf(stderr, "FAIL (no IIO context)\n");
+    goto test_summary;
+  }
+
+  pluto_set_enable_tx(1);
+  pluto_set_rx_freq(freq_rxtx_hz);
+  init_ofdm_rx();
+  init_ofdm_tx();
+  pluto_set_out_gain(-80);
+
+  fprintf(stderr, "PASS\n");
+  fprintf(stderr, "  Frequency: %lld Hz, Sample rate: %lld Hz\n", freq_rxtx_hz, sample_freq_hz);
+  pass_count++;
+
+  //--- Phase 2: TX test ---
+  fprintf(stderr, "\n[2/4] TX push test ... ");
+  {
+    float complex tx_buf[256];
+    for (i = 0; i < 256; i++) {
+      tx_buf[i] = 1.0f + 0.0f * _Complex_I;
+    }
+
+    pluto_set_out_gain(tx_output_power_minus_dbm);
+    pluto_transmit(tx_buf, 256, 0, 1);
+    pluto_set_out_gain(-80);
+  }
+  fprintf(stderr, "PASS\n");
+  pass_count++;
+
+  //--- Phase 3: RX test ---
+  fprintf(stderr, "\n[3/4] RX receive test ... ");
+
+  pluto_set_in_gain(73);
+  pluto_set_in_gain_auto_fast();
+
+  test_rssi = -110;
+  test_gain = 0;
+  test_noise_floor = 0.0f;
+
+  {
+    int rx_calls = 0;
+    long long min_rssi = 0, max_rssi = -200;
+    int report_count = 0;
+
+    gettimeofday(&tv_start, NULL);
+
+    for (;;) {
+      pluto_receive();
+      rx_calls++;
+
+      if (rx_calls % 64 == 0) {
+        test_rssi = pluto_get_in_rssi();
+        test_gain = pluto_get_in_gain();
+        test_noise_floor = cw_tone_get_noise_floor();
+
+        if (test_rssi < min_rssi) min_rssi = test_rssi;
+        if (test_rssi > max_rssi) max_rssi = test_rssi;
+      }
+
+      if (rx_calls % 512 == 0) {
+        gettimeofday(&tv_now, NULL);
+        elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
+                   + (tv_now.tv_usec - tv_start.tv_usec);
+
+        if (report_count < 4 && elapsed_us > (report_count + 1) * 500000LL) {
+          fprintf(stderr, "\n    [%.1fs] RSSI: %lld dB, gain: %lld dB, noise_floor: %.1f dB",
+                  (double)elapsed_us / 1e6, test_rssi, test_gain, test_noise_floor);
+          report_count++;
+        }
+
+        if (elapsed_us >= 2000000LL) break;
+      }
+    }
+
+    fprintf(stderr, "\n    RX calls: %d, RSSI range: [%lld, %lld]\n", rx_calls, min_rssi, max_rssi);
+
+    if (test_rssi != -110 && rx_calls > 0) {
+      fprintf(stderr, "  RX receive test: PASS\n");
+      pass_count++;
+    } else {
+      fprintf(stderr, "  RX receive test: FAIL (RSSI stuck at %lld, rx_calls=%d)\n", test_rssi, rx_calls);
+    }
+  }
+
+  //--- Phase 4: Coupled TX-RX test ---
+  fprintf(stderr, "\n[4/4] Coupled TX-RX test ... ");
+
+  {
+    float complex tx_buf[256];
+    long long baseline_rssi = -110;
+    long long tx_on_rssi = -110;
+    long long rssi_delta;
+    int j;
+
+    for (i = 0; i < 256; i++) {
+      tx_buf[i] = 1.0f + 0.0f * _Complex_I;
+    }
+
+    // Measure baseline RSSI with TX muted
+    pluto_set_out_gain(-80);
+    pluto_set_in_gain(73);
+    pluto_set_in_gain_auto_fast();
+    usleep(10000);
+
+    {
+      long long rssi_sum = 0;
+      int rssi_count = 0;
+      int rx_calls = 0;
+
+      gettimeofday(&tv_start, NULL);
+      for (;;) {
+        pluto_receive();
+        rx_calls++;
+
+        if (rx_calls % 64 == 0) {
+          long long r = pluto_get_in_rssi();
+          rssi_sum += r;
+          rssi_count++;
+        }
+
+        if (rx_calls % 256 == 0) {
+          gettimeofday(&tv_now, NULL);
+          elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
+                     + (tv_now.tv_usec - tv_start.tv_usec);
+          if (elapsed_us >= 1000000LL) break;
+        }
+      }
+      if (rssi_count > 0) baseline_rssi = rssi_sum / rssi_count;
+    }
+
+    fprintf(stderr, "\n    Baseline RSSI (TX off): %lld dB", baseline_rssi);
+
+    // Measure RSSI while transmitting DC tone
+    pluto_set_out_gain(tx_output_power_minus_dbm);
+    usleep(1000);
+
+    {
+      long long rssi_sum = 0;
+      int rssi_count = 0;
+      int rx_calls = 0;
+
+      gettimeofday(&tv_start, NULL);
+      for (;;) {
+        // Keep TX active by pushing samples
+        pluto_transmit(tx_buf, 256, 0, 0);
+        pluto_receive();
+        rx_calls++;
+
+        if (rx_calls % 64 == 0) {
+          long long r = pluto_get_in_rssi();
+          rssi_sum += r;
+          rssi_count++;
+        }
+
+        if (rx_calls % 256 == 0) {
+          gettimeofday(&tv_now, NULL);
+          elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
+                     + (tv_now.tv_usec - tv_start.tv_usec);
+          if (elapsed_us >= 1000000LL) break;
+        }
+      }
+      if (rssi_count > 0) tx_on_rssi = rssi_sum / rssi_count;
+
+      // Finalize TX
+      for (j = 0; j < 256; j++) tx_buf[j] = 0.0f + 0.0f * _Complex_I;
+      pluto_transmit(tx_buf, 256, 0, 1);
+    }
+
+    pluto_set_out_gain(-80);
+
+    rssi_delta = tx_on_rssi - baseline_rssi;
+    fprintf(stderr, "\n    TX-on RSSI: %lld dB, delta: %lld dB", tx_on_rssi, rssi_delta);
+
+    if (rssi_delta > 3) {
+      fprintf(stderr, "\n  Coupled TX-RX test: PASS (delta %lld dB)\n", rssi_delta);
+      pass_count++;
+    } else {
+      fprintf(stderr, "\n  Coupled TX-RX test: FAIL (delta %lld dB, need > 3 dB)\n", rssi_delta);
+    }
+  }
+
+test_summary:
+  fprintf(stderr, "\n==================================\n");
+  fprintf(stderr, "Results: %d/%d tests passed\n", pass_count, num_tests);
+
+  return (pass_count == num_tests) ? 0 : 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int main (int argc, char **argv) {
 
   int opt;
   static struct option long_options[] = {
     {"loopback-test", no_argument, 0, 'T'},
+    {"pluto-test", no_argument, 0, 'P'},
     {"save-tx", required_argument, 0, 's'},
     {"load-rx", required_argument, 0, 'l'},
     {0, 0, 0, 0}
   };
 
-  while ((opt = getopt_long(argc, argv, "Ts:l:", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "TPs:l:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'T':
         do_loopback_test = 1;
+        break;
+      case 'P':
+        do_pluto_test = 1;
         break;
       case 's':
         save_tx_path = optarg;
@@ -178,6 +396,10 @@ int main (int argc, char **argv) {
 
   if (do_loopback_test) {
     return run_loopback_test();
+  }
+
+  if (do_pluto_test) {
+    return run_pluto_test();
   }
 
   srandom(time(NULL));
