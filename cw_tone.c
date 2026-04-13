@@ -23,7 +23,10 @@
 // Single CW (continuous wave) tone for carrier frequency offset estimation.
 //
 // TX side: cw_tone_get_tx_samples() fills a buffer with CW_TONE_LEN samples
-// of a DC tone (1.0 + 0.0j).  The tone is transmitted before the OFDM frame.
+// of a tone at Fs/4 (0.25 cycles/sample = 350 kHz at 1.4 MHz) followed by
+// CW_TONE_GUARD zero samples.  The tone is offset from DC to avoid carrier
+// leakage in the AD9361 direct-conversion receiver.  A guard interval of
+// zeros separates the CW tone from the OFDM preamble.
 //
 // RX side: cw_tone_execute() processes one sample at a time.  It maintains a
 // circular buffer of CW_TONE_LEN samples and computes a lag-CW_TONE_HALF
@@ -31,6 +34,11 @@
 // exceeds CW_TONE_CORR_THRESH the tone is declared detected and the CFO is
 // estimated from the autocorrelation phase:
 //   cfo = arg(R(D)) / (2*pi*D)   cycles/sample
+//
+// At CW_TONE_FREQ = 0.25 cyc/samp, the tone frequency is invisible to both
+// estimation stages because 0.25*4 = 1 and 0.25*64 = 16 are integers, so
+// exp(j*2*pi*f_tone*lag) = 1 for both lags.  The estimator naturally outputs
+// the true CFO with no bias or adjustment needed.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +58,8 @@
 #define CW_TONE_COARSE_LAG   4
 #define CW_TONE_CORR_THRESH  0.85f
 #define CW_TONE_PWR_THRESH   1e-6f
+#define CW_TONE_FREQ         0.25f   // cycles/sample (Fs/4 = 350 kHz at 1.4 MHz)
+#define CW_TONE_GUARD        16      // zero-sample guard between CW tone and OFDM preamble
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -77,8 +87,8 @@ static float         cw_noise_floor;   // last valid noise floor (dB), survives 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void cw_tone_init(void)
 {
-    fprintf(stderr, "\n[cw_tone] init: tone_len=%d coarse_lag=%d fine_lag=%d thresh=%.2f",
-            CW_TONE_LEN, CW_TONE_COARSE_LAG, CW_TONE_HALF, CW_TONE_CORR_THRESH);
+    fprintf(stderr, "\n[cw_tone] init: tone_len=%d guard=%d freq=%.2f coarse_lag=%d fine_lag=%d thresh=%.2f",
+            CW_TONE_LEN, CW_TONE_GUARD, CW_TONE_FREQ, CW_TONE_COARSE_LAG, CW_TONE_HALF, CW_TONE_CORR_THRESH);
     memset(cw_buf, 0, sizeof(cw_buf));
     cw_buf_idx     = 0;
     cw_sample_count = 0;
@@ -232,14 +242,25 @@ float cw_tone_get_noise_floor(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Fill *buf with CW_TONE_LEN samples of a DC tone (1.0 + 0.0j).
-// *len is set to the total number of complex samples written.
+// Fill *buf with CW_TONE_LEN samples of an Fs/4 tone (0.25 cyc/samp) followed
+// by CW_TONE_GUARD zero samples.  *len is set to the total number of complex
+// samples written (tone + guard).
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void cw_tone_get_tx_samples(float complex *buf, int *len)
 {
     int i;
+    // Tone at Fs/4: exp(j*2*pi*0.25*n) = {1, j, -1, -j, 1, j, ...}
+    // Use exact values to avoid sinf/cosf rounding.
+    static const float complex tone_pattern[4] = {
+         1.0f + 0.0f * _Complex_I,
+         0.0f + 1.0f * _Complex_I,
+        -1.0f + 0.0f * _Complex_I,
+         0.0f - 1.0f * _Complex_I
+    };
     for (i = 0; i < CW_TONE_LEN; i++)
-        buf[i] = 1.0f + 0.0f * _Complex_I;
-    *len = CW_TONE_LEN;
-    //fprintf(stderr, "\n[cw_tone] get_tx_samples: len=%d", *len);
+        buf[i] = tone_pattern[i % 4];
+    // Guard interval: zeros between CW tone and OFDM preamble
+    for (i = 0; i < CW_TONE_GUARD; i++)
+        buf[CW_TONE_LEN + i] = 0.0f + 0.0f * _Complex_I;
+    *len = CW_TONE_LEN + CW_TONE_GUARD;
 }

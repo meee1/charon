@@ -52,17 +52,25 @@ static void test_cw_tone_init(void)
 
 static void test_cw_tone_tx_samples(void)
 {
-    TEST_BEGIN("cw_tone: get_tx_samples fills 128 DC samples");
+    TEST_BEGIN("cw_tone: get_tx_samples fills Fs/4 tone + guard");
     float complex buf[256];
     int len = 0;
-    memset(buf, 0, sizeof(buf));
+    memset(buf, 0xAA, sizeof(buf));  // fill with garbage to detect unwritten slots
 
     cw_tone_get_tx_samples(buf, &len);
 
-    TEST_ASSERT(len == 128);
-    // All samples should be 1.0 + 0.0j
-    for (int i = 0; i < len; i++) {
-        TEST_ASSERT(crealf(buf[i]) == 1.0f);
+    TEST_ASSERT(len == 128 + 16);  // tone + guard
+
+    // First 128 samples: Fs/4 tone {1, j, -1, -j, ...}
+    static const float expected_re[4] = { 1.0f,  0.0f, -1.0f,  0.0f};
+    static const float expected_im[4] = { 0.0f,  1.0f,  0.0f, -1.0f};
+    for (int i = 0; i < 128; i++) {
+        TEST_ASSERT(crealf(buf[i]) == expected_re[i % 4]);
+        TEST_ASSERT(cimagf(buf[i]) == expected_im[i % 4]);
+    }
+    // Last 16 samples: guard interval (zeros)
+    for (int i = 128; i < len; i++) {
+        TEST_ASSERT(crealf(buf[i]) == 0.0f);
         TEST_ASSERT(cimagf(buf[i]) == 0.0f);
     }
     TEST_PASS();
@@ -327,6 +335,43 @@ static void test_cw_tone_detect_near_coarse_limit(void)
     TEST_PASS();
 }
 
+static void test_cw_tone_roundtrip_tx_rx(void)
+{
+    TEST_BEGIN("cw_tone: roundtrip TX->RX recovers known CFO through Fs/4 tone");
+    float complex tx_buf[256];
+    int tx_len = 0;
+    cw_tone_get_tx_samples(tx_buf, &tx_len);
+
+    // Apply a known CFO to the TX tone samples and feed to detector.
+    // The Fs/4 tone is invisible to the autocorrelation estimator, so the
+    // detector should report the applied CFO directly.
+    float target_cfo = 0.003f;  // cycles/sample
+    cw_tone_init();
+    int detected = 0;
+
+    for (int n = 0; n < 256; n++) {
+        // Use tone portion only (skip guard zeros — they carry no tone info)
+        int idx = n % 128;
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex cfo_phasor = cosf(phase) + sinf(phase) * _Complex_I;
+        float complex sample = tx_buf[idx] * cfo_phasor;
+        if (cw_tone_execute(sample)) {
+            detected = 1;
+            break;
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "roundtrip tone should be detected");
+    float est_cfo = cw_tone_get_freq_offset();
+    float error = fabsf(est_cfo - target_cfo);
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "roundtrip CFO est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, error);
+    TEST_ASSERT_MSG(error < 0.001f, msg);
+    TEST_PASS();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // main
 ///////////////////////////////////////////////////////////////////////////////
@@ -349,6 +394,7 @@ int main(void)
     RUN_TEST(test_cw_tone_detect_large_negative_cfo);
     RUN_TEST(test_cw_tone_detect_moderate_cfo);
     RUN_TEST(test_cw_tone_detect_near_coarse_limit);
+    RUN_TEST(test_cw_tone_roundtrip_tx_rx);
 
     TEST_SUMMARY();
     return TEST_EXIT_CODE();
