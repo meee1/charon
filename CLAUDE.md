@@ -52,8 +52,9 @@ timers.c          Microsecond-resolution timers (gettimeofday-based)
 glibc_compat.c    glibc compatibility shims — wraps __isoc23_strtol, __isoc23_strtoll,
                   __isoc23_strtoul, and __isoc23_strtoull via linker --wrap flags
 
-cw_tone.c         CW tone CFO estimator — TX generates 128-sample DC tone, RX detects
-                  via lag-64 autocorrelation and estimates carrier frequency offset
+cw_tone.c         CW tone CFO estimator — TX generates 128-sample Fs/4 tone (350 kHz)
+                  plus 16-sample guard, RX detects via two-stage autocorrelation
+                  and estimates carrier frequency offset
 
 ofdm_conf.h       OFDM parameters (64 subcarriers, QPSK, FEC, 1x decimation)
 ofdm.h            liquid-dsp internal struct definitions
@@ -92,15 +93,19 @@ MAC: charon.c manages frame queueing, ACK tracking, retransmission, batman frame
 
 ### CFO Estimation (`cw_tone.c`)
 
-A single CW (continuous wave) DC tone is used for carrier frequency offset estimation.
+A single CW (continuous wave) tone at Fs/4 (350 kHz) is used for carrier frequency offset estimation.
+The tone is offset from DC to avoid carrier leakage in the AD9361 direct-conversion receiver.
 
-- **TX**: 128 samples of DC tone (`1.0 + 0.0j`) transmitted before each OFDM frame
-- **RX**: While in SEEKPLCP state, a lag-64 autocorrelation detects the tone and estimates CFO:
-  `cfo = arg(R(64)) / (2*pi*64)` in cycles/sample
+- **TX**: 128 samples of Fs/4 tone (0.25 cyc/samp) + 16-sample zero guard transmitted before each OFDM frame
+- **RX**: While in SEEKPLCP state, a two-stage autocorrelation detects the tone and estimates CFO:
+  - Stage 1 (coarse): lag-4, capture range ±175 kHz
+  - Stage 2 (fine): lag-64 on de-rotated signal, refines residual
+  - At f_tone=0.25, both `0.25*4=1` and `0.25*64=16` are integers, so the tone
+    frequency vanishes from the phase estimate — the estimator outputs true CFO directly
 - **Detection threshold**: Normalized autocorrelation metric `|R|/(P/2)` >= 0.85
 - **Correction**: CFO applied to liquid-dsp NCO and hardware XO (`pluto_apply_pss_xo_correction`)
 - **Cost**: ~4 multiply-adds per sample
-- **Over-the-air frame**: `[CW tone 128 samples] [OFDM PLCP + data]`
+- **Over-the-air frame**: `[CW tone 128 samples] [guard 16 zeros] [OFDM PLCP + data]`
 
 ### MAC Layer Detail (`charon.c`)
 

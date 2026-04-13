@@ -1,6 +1,6 @@
 /* This file was automatically generated.  Do not edit! */
 
-#define CW_TONE_TX_MAX_SAMPLES  128
+#define CW_TONE_TX_MAX_SAMPLES  (128 + 16)   /* tone + guard */
 
 void cw_tone_init(void);
 void cw_tone_reset(void);

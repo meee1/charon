@@ -1011,6 +1011,90 @@ static void test_noise_sandwich_awgn(void)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// DC leakage immunity — validate Fs/4 tone rejects carrier leakage
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_channel_dc_leakage_immunity(void)
+{
+    TEST_BEGIN("channel: Fs/4 tone immune to DC leakage");
+    cw_tone_init();
+    srand(15000);
+
+    // Generate TX samples (Fs/4 tone + guard)
+    float complex tx_buf[CW_TONE_LEN + CW_TONE_GUARD];
+    int tx_len = 0;
+    cw_tone_get_tx_samples(tx_buf, &tx_len);
+
+    // Simulate: TX tone + CFO + severe DC leakage from AD9361 LO
+    float target_cfo = 0.003f;
+    float dc_leakage = 0.3f;  // 30% of signal amplitude — severe case
+    int detected = 0;
+    float est_cfo = 0.0f;
+
+    for (int n = 0; n < 512; n++) {
+        int idx = n % CW_TONE_LEN;  // use tone portion only
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n;
+        float complex cfo_phasor = cosf(phase) + sinf(phase) * _Complex_I;
+        float complex sample = tx_buf[idx] * cfo_phasor;
+
+        // Add DC leakage (constant complex offset, typical of LO leakage)
+        sample += dc_leakage + 0.0f * _Complex_I;
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "Fs/4 tone should be detected despite DC leakage");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.002f, msg);
+    TEST_PASS();
+}
+
+static void test_channel_roundtrip_with_impairments(void)
+{
+    TEST_BEGIN("channel: roundtrip TX->RX with CFO + noise + DC leakage");
+    cw_tone_init();
+    srand(15001);
+
+    float complex tx_buf[CW_TONE_LEN + CW_TONE_GUARD];
+    int tx_len = 0;
+    cw_tone_get_tx_samples(tx_buf, &tx_len);
+
+    float target_cfo = -0.004f;
+    float phase_offset = 1.2f;
+    float dc_leakage_re = 0.2f;
+    float dc_leakage_im = -0.1f;
+    float noise_sigma = 0.1f;   // ~20 dB SNR
+    int detected = 0;
+    float est_cfo = 0.0f;
+
+    for (int n = 0; n < 512; n++) {
+        int idx = n % CW_TONE_LEN;
+        float phase = 2.0f * (float)M_PI * target_cfo * (float)n + phase_offset;
+        float complex cfo_phasor = cosf(phase) + sinf(phase) * _Complex_I;
+        float complex sample = tx_buf[idx] * cfo_phasor;
+        sample += dc_leakage_re + dc_leakage_im * _Complex_I;
+        sample += awgn(noise_sigma);
+
+        if (!detected && cw_tone_execute(sample)) {
+            detected = 1;
+            est_cfo = cw_tone_get_freq_offset();
+        }
+    }
+
+    TEST_ASSERT_MSG(detected, "should detect through combined impairments + DC leakage");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "est=%.6f target=%.6f err=%.6f",
+             est_cfo, target_cfo, fabsf(est_cfo - target_cfo));
+    TEST_ASSERT_MSG(fabsf(est_cfo - target_cfo) < 0.003f, msg);
+    TEST_PASS();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Frequency drift (time-varying CFO)
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1116,6 +1200,10 @@ int main(void)
     // Noise sandwich (leading + lagging)
     RUN_TEST(test_noise_sandwich);
     RUN_TEST(test_noise_sandwich_awgn);
+
+    // DC leakage immunity (Fs/4 tone)
+    RUN_TEST(test_channel_dc_leakage_immunity);
+    RUN_TEST(test_channel_roundtrip_with_impairments);
 
     // Drift
     RUN_TEST(test_channel_frequency_drift);
