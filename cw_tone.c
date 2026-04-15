@@ -77,7 +77,7 @@ static int           cw_detected;      // latch: once detected, stop until reset
 static float complex cw_autocorr;      // lag-CW_TONE_COARSE_LAG autocorrelation
 static float         cw_power;         // total power in the buffer
 
-static float         cw_noise_floor;   // last valid noise floor (dB), survives reset
+static float         cw_noise_power;   // last valid mean power (linear), survives reset
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -97,7 +97,7 @@ void cw_tone_init(void)
     cw_detected    = 0;
     cw_autocorr    = 0.0f + 0.0f * _Complex_I;
     cw_power       = 0.0f;
-    cw_noise_floor = -200.0f;
+    cw_noise_power = 0.0f;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -179,9 +179,8 @@ int cw_tone_execute(float complex sample)
 
     cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
 
-    // Update noise floor estimate (mean power per sample in dB).
-    if (cw_power > 1e-20f)
-        cw_noise_floor = 10.0f * log10f(cw_power / (float)CW_TONE_LEN);
+    // Latch raw power for noise floor getter (log10f deferred to read time).
+    cw_noise_power = cw_power;
 
     // --- Stage 1: Coarse detection from sliding accumulators ---
     if (cw_power < CW_TONE_PWR_THRESH)
@@ -238,7 +237,9 @@ float cw_tone_get_peak(void)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 float cw_tone_get_noise_floor(void)
 {
-    return cw_noise_floor;
+    if (cw_noise_power < 1e-20f)
+        return -200.0f;
+    return 10.0f * log10f(cw_noise_power / (float)CW_TONE_LEN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
