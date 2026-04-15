@@ -372,6 +372,128 @@ static void test_cw_tone_roundtrip_tx_rx(void)
     TEST_PASS();
 }
 
+static void test_cw_tone_noise_floor_before_fill(void)
+{
+    TEST_BEGIN("cw_tone: noise floor returns -200 before buffer fills");
+    cw_tone_init();
+    TEST_ASSERT(cw_tone_get_noise_floor() == -200.0f);
+
+    // Feed 64 samples (less than CW_TONE_LEN=128) — still not valid
+    for (int i = 0; i < 64; i++)
+        cw_tone_execute(0.5f + 0.0f * _Complex_I);
+
+    TEST_ASSERT(cw_tone_get_noise_floor() == -200.0f);
+    TEST_PASS();
+}
+
+static void test_cw_tone_noise_floor_unit_power(void)
+{
+    TEST_BEGIN("cw_tone: noise floor is ~0 dB for unit-amplitude tone");
+    cw_tone_init();
+
+    // Feed 256 unit-amplitude samples.  Mean power per sample = 1.0,
+    // so 10*log10(1.0) = 0 dB.
+    for (int i = 0; i < 256; i++)
+        cw_tone_execute(1.0f + 0.0f * _Complex_I);
+
+    float nf = cw_tone_get_noise_floor();
+    char msg[128];
+    snprintf(msg, sizeof(msg), "noise floor=%.2f dB, expected ~0 dB", nf);
+    TEST_ASSERT_MSG(fabsf(nf) < 1.0f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_noise_floor_half_power(void)
+{
+    TEST_BEGIN("cw_tone: noise floor is ~-6 dB for amplitude 0.5");
+    cw_tone_init();
+
+    // amplitude=0.5 → power=0.25 → 10*log10(0.25)=-6.02 dB
+    for (int i = 0; i < 256; i++)
+        cw_tone_execute(0.5f + 0.0f * _Complex_I);
+
+    float nf = cw_tone_get_noise_floor();
+    float expected = -6.02f;
+    char msg[128];
+    snprintf(msg, sizeof(msg), "noise floor=%.2f dB, expected ~%.2f dB", nf, expected);
+    TEST_ASSERT_MSG(fabsf(nf - expected) < 1.0f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_noise_floor_survives_reset(void)
+{
+    TEST_BEGIN("cw_tone: noise floor survives cw_tone_reset");
+    cw_tone_init();
+
+    // Feed enough samples to get a valid noise floor
+    for (int i = 0; i < 256; i++)
+        cw_tone_execute(1.0f + 0.0f * _Complex_I);
+
+    float nf_before = cw_tone_get_noise_floor();
+    TEST_ASSERT_MSG(nf_before > -200.0f, "should have valid noise floor before reset");
+
+    cw_tone_reset();
+
+    float nf_after = cw_tone_get_noise_floor();
+    char msg[128];
+    snprintf(msg, sizeof(msg), "before=%.2f after=%.2f, should survive reset", nf_before, nf_after);
+    TEST_ASSERT_MSG(fabsf(nf_after - nf_before) < 0.01f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_noise_floor_updates(void)
+{
+    TEST_BEGIN("cw_tone: noise floor updates when signal level changes");
+    cw_tone_init();
+
+    // Fill with unit amplitude — use noise-like samples to avoid triggering
+    // the detection latch (which stops accumulator updates).
+    srand(99);
+    for (int i = 0; i < 256; i++) {
+        float re = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        float im = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        cw_tone_execute(re + im * _Complex_I);
+    }
+    float nf_high = cw_tone_get_noise_floor();
+
+    // Now feed low-amplitude noise — the sliding window will flush the
+    // old high-power samples after 128 new ones
+    for (int i = 0; i < 256; i++) {
+        float re = ((float)rand() / RAND_MAX) * 0.02f - 0.01f;
+        float im = ((float)rand() / RAND_MAX) * 0.02f - 0.01f;
+        cw_tone_execute(re + im * _Complex_I);
+    }
+    float nf_low = cw_tone_get_noise_floor();
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "high=%.2f low=%.2f, should differ by ~40 dB", nf_high, nf_low);
+    TEST_ASSERT_MSG(nf_high - nf_low > 30.0f, msg);
+    TEST_PASS();
+}
+
+static void test_cw_tone_was_detected_flag(void)
+{
+    TEST_BEGIN("cw_tone: was_detected returns 0 before detection, 1 after");
+    cw_tone_init();
+
+    TEST_ASSERT(cw_tone_was_detected() == 0);
+
+    // Feed 64 samples — not enough to detect
+    for (int i = 0; i < 64; i++)
+        cw_tone_execute(1.0f + 0.0f * _Complex_I);
+    TEST_ASSERT(cw_tone_was_detected() == 0);
+
+    // Feed more to trigger detection
+    for (int i = 0; i < 256; i++)
+        cw_tone_execute(1.0f + 0.0f * _Complex_I);
+    TEST_ASSERT(cw_tone_was_detected() == 1);
+
+    // Reset should clear it
+    cw_tone_reset();
+    TEST_ASSERT(cw_tone_was_detected() == 0);
+    TEST_PASS();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // main
 ///////////////////////////////////////////////////////////////////////////////
@@ -395,6 +517,12 @@ int main(void)
     RUN_TEST(test_cw_tone_detect_moderate_cfo);
     RUN_TEST(test_cw_tone_detect_near_coarse_limit);
     RUN_TEST(test_cw_tone_roundtrip_tx_rx);
+    RUN_TEST(test_cw_tone_noise_floor_before_fill);
+    RUN_TEST(test_cw_tone_noise_floor_unit_power);
+    RUN_TEST(test_cw_tone_noise_floor_half_power);
+    RUN_TEST(test_cw_tone_noise_floor_survives_reset);
+    RUN_TEST(test_cw_tone_noise_floor_updates);
+    RUN_TEST(test_cw_tone_was_detected_flag);
 
     TEST_SUMMARY();
     return TEST_EXIT_CODE();
