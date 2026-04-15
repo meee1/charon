@@ -157,7 +157,7 @@ int run_loopback_test(void) {
 int run_pluto_test(void) {
   int i;
   int pass_count = 0;
-  int num_tests = 4;
+  int num_tests = 5;
   struct iio_context *ctx;
   struct timeval tv_start, tv_now;
   long long elapsed_us;
@@ -170,7 +170,7 @@ int run_pluto_test(void) {
   fprintf(stderr, "==================================\n");
 
   //--- Phase 1: Hardware Init ---
-  fprintf(stderr, "\n[1/4] Hardware init ... ");
+  fprintf(stderr, "\n[1/5] Hardware init ... ");
 
   read_config();
   ctx = pluto_init_txrx();
@@ -191,7 +191,7 @@ int run_pluto_test(void) {
   pass_count++;
 
   //--- Phase 2: TX test ---
-  fprintf(stderr, "\n[2/4] TX push test ... ");
+  fprintf(stderr, "\n[2/5] TX push test ... ");
   {
     float complex tx_buf[256];
     for (i = 0; i < 256; i++) {
@@ -206,7 +206,7 @@ int run_pluto_test(void) {
   pass_count++;
 
   //--- Phase 3: RX test ---
-  fprintf(stderr, "\n[3/4] RX receive test ... ");
+  fprintf(stderr, "\n[3/5] RX receive test ... ");
 
   pluto_set_in_gain(73);
   pluto_set_in_gain_auto_fast();
@@ -261,7 +261,7 @@ int run_pluto_test(void) {
   }
 
   //--- Phase 4: Coupled TX-RX test ---
-  fprintf(stderr, "\n[4/4] Coupled TX-RX test ... ");
+  fprintf(stderr, "\n[4/5] Coupled TX-RX test ... ");
 
   {
     float complex tx_buf[256];
@@ -354,6 +354,97 @@ int run_pluto_test(void) {
       pass_count++;
     } else {
       fprintf(stderr, "\n  Coupled TX-RX test: FAIL (delta %lld dB, need > 3 dB)\n", rssi_delta);
+    }
+  }
+
+  //--- Phase 5: OFDM frame TX/RX over RF ---
+  fprintf(stderr, "\n[5/5] OFDM frame TX/RX over RF ... ");
+
+  {
+    int test_sizes[] = {64, 256, 1024};
+    int n_sizes = sizeof(test_sizes) / sizeof(test_sizes[0]);
+    int ofdm_pass = 0;
+    int ofdm_total = n_sizes;
+    int t;
+    unsigned char tx_payload[PAYLOAD_LEN];
+
+    ofdm_rx_set_loopback(1);
+
+    // Set RX gain high to pick up TX leakage
+    pluto_set_in_gain(73);
+    pluto_set_in_gain_auto_fast();
+    usleep(10000);
+
+    for (t = 0; t < n_sizes; t++) {
+      int payload_len = test_sizes[t];
+      int j;
+
+      for (j = 0; j < payload_len; j++)
+        tx_payload[j] = (unsigned char)((j + t) & 0xFF);
+
+      loopback_rx_ok = 0;
+      loopback_rx_payload_len = 0;
+      ofdm_rx_reset();
+      cw_tone_reset();
+
+      // Flush stale RX samples
+      pluto_receive();
+      pluto_receive();
+
+      // TX the OFDM frame through the real hardware
+      pluto_set_out_gain(tx_output_power_minus_dbm);
+      usleep(1);
+
+      {
+        static float complex cw_buf_test[CW_TONE_TX_MAX_SAMPLES];
+        int cw_len = 0;
+        cw_tone_get_tx_samples(cw_buf_test, &cw_len);
+        pluto_transmit(cw_buf_test, cw_len, 0, 0);
+      }
+
+      ofdm_tx_loopback_rf(tx_payload, payload_len);
+
+      pluto_set_out_gain(-80);
+
+      // Pump RX to demodulate the coupled-back frame
+      gettimeofday(&tv_start, NULL);
+      for (;;) {
+        pluto_receive();
+
+        if (loopback_rx_ok)
+          break;
+
+        gettimeofday(&tv_now, NULL);
+        elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
+                   + (tv_now.tv_usec - tv_start.tv_usec);
+        if (elapsed_us >= 2000000LL)
+          break;
+      }
+
+      if (loopback_rx_ok && loopback_rx_payload_len == payload_len) {
+        int errors = 0;
+        for (j = 0; j < payload_len; j++) {
+          if (loopback_rx_payload[j] != tx_payload[j]) errors++;
+        }
+        if (errors == 0) {
+          fprintf(stderr, "\n    payload_len=%d: PASS", payload_len);
+          ofdm_pass++;
+        } else {
+          fprintf(stderr, "\n    payload_len=%d: FAIL (%d byte errors)", payload_len, errors);
+        }
+      } else {
+        fprintf(stderr, "\n    payload_len=%d: FAIL (frame not received, rx_ok=%d, rx_len=%d)",
+                payload_len, loopback_rx_ok, loopback_rx_payload_len);
+      }
+    }
+
+    ofdm_rx_set_loopback(0);
+
+    if (ofdm_pass == ofdm_total) {
+      fprintf(stderr, "\n  OFDM TX/RX test: PASS (%d/%d)\n", ofdm_pass, ofdm_total);
+      pass_count++;
+    } else {
+      fprintf(stderr, "\n  OFDM TX/RX test: FAIL (%d/%d)\n", ofdm_pass, ofdm_total);
     }
   }
 

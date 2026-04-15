@@ -202,3 +202,21 @@ int ofdm_tx_loopback(uint8_t *payload, int len) {
     }
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Like ofdm_tx_loopback but pushes symbols through pluto_transmit (real RF hardware).
+// The RX side picks up the frame via TX-RX coupling on the AD9361.
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+int ofdm_tx_loopback_rf(uint8_t *payload, int len) {
+
+  ofdmflexframegen_assemble(ofdm_fg, ofdm_header, payload, len);
+
+  while(1) {
+    ofdm_last_symbol = ofdmflexframegen_write(ofdm_fg, ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20);
+    pluto_transmit(ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20, 0, ofdm_last_symbol);
+
+    if(ofdm_last_symbol) {
+      return 0;
+    }
+  }
+}
