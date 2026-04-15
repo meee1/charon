@@ -157,7 +157,7 @@ int run_loopback_test(void) {
 int run_pluto_test(void) {
   int i;
   int pass_count = 0;
-  int num_tests = 5;
+  int num_tests = 6;
   struct iio_context *ctx;
   struct timeval tv_start, tv_now;
   long long elapsed_us;
@@ -170,7 +170,7 @@ int run_pluto_test(void) {
   fprintf(stderr, "==================================\n");
 
   //--- Phase 1: Hardware Init ---
-  fprintf(stderr, "\n[1/5] Hardware init ... ");
+  fprintf(stderr, "\n[1/6] Hardware init ... ");
 
   read_config();
   ctx = pluto_init_txrx();
@@ -191,7 +191,7 @@ int run_pluto_test(void) {
   pass_count++;
 
   //--- Phase 2: TX test ---
-  fprintf(stderr, "\n[2/5] TX push test ... ");
+  fprintf(stderr, "\n[2/6] TX push test ... ");
   {
     float complex tx_buf[256];
     for (i = 0; i < 256; i++) {
@@ -206,7 +206,7 @@ int run_pluto_test(void) {
   pass_count++;
 
   //--- Phase 3: RX test ---
-  fprintf(stderr, "\n[3/5] RX receive test ... ");
+  fprintf(stderr, "\n[3/6] RX receive test ... ");
 
   pluto_set_in_gain(73);
   pluto_set_in_gain_auto_fast();
@@ -261,7 +261,7 @@ int run_pluto_test(void) {
   }
 
   //--- Phase 4: Coupled TX-RX test ---
-  fprintf(stderr, "\n[4/5] Coupled TX-RX test ... ");
+  fprintf(stderr, "\n[4/6] Coupled TX-RX test ... ");
 
   {
     float complex tx_buf[256];
@@ -358,12 +358,14 @@ int run_pluto_test(void) {
   }
 
   //--- Phase 5: OFDM frame TX/RX over RF ---
-  fprintf(stderr, "\n[5/5] OFDM frame TX/RX over RF ... ");
+  fprintf(stderr, "\n[5/6] OFDM frame TX/RX over RF ... ");
+  fprintf(stderr, "\n[6/6] CW tone detection over RF ... ");
 
   {
     int test_sizes[] = {64, 256, 1024};
     int n_sizes = sizeof(test_sizes) / sizeof(test_sizes[0]);
     int ofdm_pass = 0;
+    int cw_pass = 0;
     int ofdm_total = n_sizes;
     int t;
     unsigned char tx_payload[PAYLOAD_LEN];
@@ -421,30 +423,59 @@ int run_pluto_test(void) {
           break;
       }
 
+      // Check CW tone detection
+      int cw_det = cw_tone_was_detected();
+      float cw_cfo = cw_tone_get_freq_offset();
+      float cw_metric = cw_tone_get_peak();
+      float cw_cfo_hz = cw_cfo * (float)sample_freq_hz;
+
+      // Self-coupling: TX and RX share the same XO, so CFO should be small.
+      // Allow up to 5 kHz to account for DC offset artifacts and XO warm-up.
+      int cw_cfo_ok = (cw_det && fabsf(cw_cfo_hz) < 5000.0f);
+
+      if (cw_det) {
+        fprintf(stderr, "\n    payload_len=%d: CW tone detected, CFO=%.1f Hz, metric=%.3f%s",
+                payload_len, cw_cfo_hz, cw_metric, cw_cfo_ok ? "" : " (CFO too large)");
+        if (cw_cfo_ok) cw_pass++;
+      } else {
+        fprintf(stderr, "\n    payload_len=%d: CW tone NOT detected", payload_len);
+      }
+
+      // Check OFDM payload
       if (loopback_rx_ok && loopback_rx_payload_len == payload_len) {
         int errors = 0;
         for (j = 0; j < payload_len; j++) {
           if (loopback_rx_payload[j] != tx_payload[j]) errors++;
         }
         if (errors == 0) {
-          fprintf(stderr, "\n    payload_len=%d: PASS", payload_len);
+          fprintf(stderr, "\n    payload_len=%d: OFDM PASS", payload_len);
           ofdm_pass++;
         } else {
-          fprintf(stderr, "\n    payload_len=%d: FAIL (%d byte errors)", payload_len, errors);
+          fprintf(stderr, "\n    payload_len=%d: OFDM FAIL (%d byte errors)", payload_len, errors);
         }
       } else {
-        fprintf(stderr, "\n    payload_len=%d: FAIL (frame not received, rx_ok=%d, rx_len=%d)",
+        fprintf(stderr, "\n    payload_len=%d: OFDM FAIL (frame not received, rx_ok=%d, rx_len=%d)",
                 payload_len, loopback_rx_ok, loopback_rx_payload_len);
       }
     }
 
     ofdm_rx_set_loopback(0);
 
+    fprintf(stderr, "\n    CW tone: %d/%d detected with sane CFO", cw_pass, ofdm_total);
+    fprintf(stderr, "\n    OFDM:    %d/%d frames decoded", ofdm_pass, ofdm_total);
+
     if (ofdm_pass == ofdm_total) {
       fprintf(stderr, "\n  OFDM TX/RX test: PASS (%d/%d)\n", ofdm_pass, ofdm_total);
       pass_count++;
     } else {
       fprintf(stderr, "\n  OFDM TX/RX test: FAIL (%d/%d)\n", ofdm_pass, ofdm_total);
+    }
+
+    if (cw_pass == ofdm_total) {
+      fprintf(stderr, "  CW tone test: PASS (%d/%d)\n", cw_pass, ofdm_total);
+      pass_count++;
+    } else {
+      fprintf(stderr, "  CW tone test: FAIL (%d/%d)\n", cw_pass, ofdm_total);
     }
   }
 
