@@ -390,15 +390,21 @@ int run_pluto_test(void) {
       loopback_rx_ok = 0;
       loopback_rx_payload_len = 0;
 
-      // Flush stale RX data so the framesync starts clean.
-      pluto_receive();
-      pluto_receive();
+      // Mute TX and wait for AD9361 pipeline to drain, then flush all
+      // stale RX data so the framesync starts on a clean signal.
+      pluto_set_out_gain(-80);
+      usleep(50000);
+      {
+        int flush;
+        for (flush = 0; flush < 20; flush++)
+          pluto_receive();
+      }
       ofdm_rx_reset();
       ofdm_rx_reset_nco();
 
       // TX the OFDM frame through the real hardware.
       pluto_set_out_gain(tx_output_power_minus_dbm);
-      usleep(100);
+      usleep(1000);
 
       ofdm_tx_loopback_rf(tx_payload, payload_len);
 
