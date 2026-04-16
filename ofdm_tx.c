@@ -213,6 +213,7 @@ int ofdm_tx_loopback(uint8_t *payload, int len) {
 // The caller is responsible for flushing any remaining TX data if needed.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 int ofdm_tx_loopback_rf(uint8_t *payload, int len) {
+  int i;
 
   ofdmflexframegen_assemble(ofdm_fg, ofdm_header, payload, len);
 
@@ -223,8 +224,21 @@ int ofdm_tx_loopback_rf(uint8_t *payload, int len) {
     pluto_transmit(ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20, 0, 0);
 
     if(ofdm_last_symbol) {
-      // Push any remaining TX samples out of the DMA without flushing RX.
+      // Push remaining TX samples without flushing RX.
       pluto_transmit_flush_tx();
+
+      // Pump RX to catch coupled-back samples that arrive after TX
+      // completes (AD9361 pipeline latency).  Push trailing silence
+      // to keep the TX DMA active so the AD9361 stays in FDD mode.
+      for (i = 0; i < (OFDM_M+CP_LEN)*20; i++)
+        ofdm_symbol_buffer[i] = 0.0f + 0.0f * _Complex_I;
+
+      for (i = 0; i < 10; i++) {
+        pluto_transmit(ofdm_symbol_buffer, (OFDM_M+CP_LEN)*20, 0, 0);
+        pluto_transmit_flush_tx();
+        pluto_receive();
+      }
+
       return 0;
     }
   }
