@@ -617,7 +617,29 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last)
       while( iio_buffer_refill(rxbuf) > 0); //flush the rx buffer
     }
 
-  return 0; 
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+// Flush the partially-filled TX buffer (zero-pad + push) without draining
+// the RX buffer.  Used by the RF loopback test where we need the TX DMA to
+// finish but must keep coupled-back RX samples for the demodulator.
+///////////////////////////////////////////////////////////////////////////////////////
+void pluto_transmit_flush_tx(void) {
+  if (!more_tx_data)
+    return;
+
+  while(tx_p_dat != tx_p_end) {
+    ((int16_t*)tx_p_dat)[0] = 0;
+    ((int16_t*)tx_p_dat)[1] = 0;
+    tx_p_dat += tx_p_inc;
+  }
+
+  more_tx_data = 0;
+  iio_buffer_push(txbuf);
+  fprintf(stderr, "\n[pluto] TX: flush_tx (no RX drain)");
+
+  if(tx_save_fp) fflush(tx_save_fp);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////

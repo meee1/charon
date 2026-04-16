@@ -44,6 +44,9 @@ int pluto_transmit(float complex *buffer, int len, int do_dump_rx, int is_last) 
     return 0;
 }
 
+void pluto_transmit_flush_tx(void) {}
+int pluto_receive(void) { return 0; }
+
 static long long stub_in_gain = 40;
 
 long long pluto_get_in_gain(void) { return stub_in_gain; }

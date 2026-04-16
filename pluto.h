@@ -9,6 +9,7 @@ void pluto_tx_save_close(void);
 void pluto_tx_save_open(const char *path);
 int pluto_receive();
 int pluto_transmit(float complex *buffer,int len,int do_dump_rx,int is_last);
+void pluto_transmit_flush_tx(void);
 void pluto_set_rx_freq(long long freq_rx_hz);
 void pluto_set_enable_tx(int enable);
 void pluto_set_tx_freq(long long freq_tx_hz);
