@@ -3,6 +3,7 @@ void do_ofdm_rx(float complex sample);
 void init_ofdm_rx(void);
 void ofdm_rx_set_loopback(int enable);
 void ofdm_rx_reset(void);
+void ofdm_rx_reset_nco(void);
 void ofdm_rx_apply_pending_xo(void);
 int ofdm_rx_callback(unsigned char *_header,int _header_valid,unsigned char *_payload,unsigned int _payload_len,int _payload_valid,framesyncstats_s _stats,void *_userdata);
 int ofdm_rx_state();

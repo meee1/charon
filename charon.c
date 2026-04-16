@@ -391,6 +391,7 @@ int run_pluto_test(void) {
       pluto_receive();
       pluto_receive();
       ofdm_rx_reset();
+      ofdm_rx_reset_nco();
       cw_tone_reset();
 
       // TX the OFDM frame through the real hardware.
