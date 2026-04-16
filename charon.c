@@ -370,6 +370,11 @@ int run_pluto_test(void) {
 
     ofdm_rx_set_loopback(1);
 
+    // Disable CW tone detector — self-coupling DC leakage triggers false
+    // detections that corrupt the framesync NCO.  The OFDM framesync finds
+    // the preamble on its own without CW-assisted CFO estimation.
+    cw_tone_disable();
+
     // Set RX gain high to pick up TX leakage
     pluto_set_in_gain(73);
     pluto_set_in_gain_auto_fast();
@@ -384,20 +389,14 @@ int run_pluto_test(void) {
 
       loopback_rx_ok = 0;
       loopback_rx_payload_len = 0;
-      ofdm_rx_reset();
-      cw_tone_reset();
 
-      // Flush stale RX data so the framesync starts clean
+      // Flush stale RX data so the framesync starts clean.
       pluto_receive();
       pluto_receive();
       ofdm_rx_reset();
       ofdm_rx_reset_nco();
-      cw_tone_reset();
 
       // TX the OFDM frame through the real hardware.
-      // Skip the CW tone preamble — self-coupling on the same device
-      // produces DC leakage that confuses the tone detector.  The OFDM
-      // framesync finds the preamble on its own.
       pluto_set_out_gain(tx_output_power_minus_dbm);
       usleep(100);
 
