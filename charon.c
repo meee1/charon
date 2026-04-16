@@ -405,18 +405,30 @@ int run_pluto_test(void) {
       pluto_set_out_gain(-80);
 
       // Pump RX to demodulate the coupled-back frame
-      gettimeofday(&tv_start, NULL);
-      for (;;) {
-        pluto_receive();
+      {
+        int rx_pump_count = 0;
+        int saw_non_seekplcp = 0;
 
-        if (loopback_rx_ok)
-          break;
+        gettimeofday(&tv_start, NULL);
+        for (;;) {
+          pluto_receive();
+          rx_pump_count++;
 
-        gettimeofday(&tv_now, NULL);
-        elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
-                   + (tv_now.tv_usec - tv_start.tv_usec);
-        if (elapsed_us >= 2000000LL)
-          break;
+          if (!saw_non_seekplcp && ofdm_rx_state() != 0) {
+            saw_non_seekplcp = 1;
+            fprintf(stderr, "\n    [debug] framesync left SEEKPLCP (state=%d) after %d rx pumps", ofdm_rx_state(), rx_pump_count);
+          }
+
+          if (loopback_rx_ok)
+            break;
+
+          gettimeofday(&tv_now, NULL);
+          elapsed_us = (tv_now.tv_sec - tv_start.tv_sec) * 1000000LL
+                     + (tv_now.tv_usec - tv_start.tv_usec);
+          if (elapsed_us >= 2000000LL)
+            break;
+        }
+        fprintf(stderr, "\n    [debug] rx_pumps=%d, saw_preamble=%d", rx_pump_count, saw_non_seekplcp);
       }
 
       // Check OFDM payload
