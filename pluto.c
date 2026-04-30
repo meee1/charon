@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <sys/time.h>
 
 #include "liquid/liquid.h"
@@ -101,6 +102,41 @@ static FILE *rx_load_fp = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+// Read back and log the AD9361 PFIR / clock-chain state so we can confirm what
+// libad9361's auto-picker actually selected (notably the PFIR INT/DEC factor,
+// which is chosen internally and not visible from the call-site arguments).
+static void pluto_log_filter_chain(struct iio_device *phydev) {
+    char buf[1024];
+    ssize_t n;
+
+    n = iio_device_attr_read(phydev, "filter_fir_config", buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        // Header is the first two lines: "TX 3 GAIN x INT N" / "RX 3 GAIN x DEC N".
+        int newlines = 0;
+        for (ssize_t i = 0; i < n; i++) {
+            if (buf[i] == '\n' && ++newlines == 2) { buf[i] = '\0'; break; }
+        }
+        fprintf(stderr, "\n[pluto] FIR config header:\n%s", buf);
+    } else {
+        fprintf(stderr, "\n[pluto] filter_fir_config read failed: %zd", n);
+    }
+
+    n = iio_device_attr_read(phydev, "rx_path_rates", buf, sizeof(buf) - 1);
+    if (n > 0) { buf[n] = '\0'; fprintf(stderr, "\n[pluto] rx_path_rates: %s", buf); }
+
+    n = iio_device_attr_read(phydev, "tx_path_rates", buf, sizeof(buf) - 1);
+    if (n > 0) { buf[n] = '\0'; fprintf(stderr, "\n[pluto] tx_path_rates: %s", buf); }
+
+    bool fir_en = false;
+    if (iio_device_attr_read_bool(phydev, "in_voltage_filter_fir_en", &fir_en) == 0)
+        fprintf(stderr, "\n[pluto] in_voltage_filter_fir_en=%d", (int)fir_en);
+    if (iio_device_attr_read_bool(phydev, "out_voltage_filter_fir_en", &fir_en) == 0)
+        fprintf(stderr, "\n[pluto] out_voltage_filter_fir_en=%d", (int)fir_en);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 struct iio_context * pluto_init_txrx() {
 
     fprintf(stderr, "\n[pluto] creating local IIO context...");
@@ -159,6 +195,8 @@ struct iio_context * pluto_init_txrx() {
       fprintf(stderr, "\n[pluto] HW RX bandwidth: %lld Hz, TX bandwidth: %lld Hz", hw_rx_bw, hw_tx_bw);
       fprintf(stderr, "\n[pluto] HW RX LO: %lld Hz, TX LO: %lld Hz", hw_rx_lo, hw_tx_lo);
     }
+
+    pluto_log_filter_chain(phy);
 
     pluto_init_xo_correction();
 
@@ -370,6 +408,8 @@ void pluto_set_in_sample_freq(long long sfreq) {
       if (ret < 0)
         fprintf(stderr, "\n[pluto] ERROR: ad9361_set_bb_rate_custom_filter_manual failed: %d", ret);
     }
+
+    pluto_log_filter_chain(phy);
 
     current_sample_freq = sfreq;
     fprintf(stderr, "\n[pluto] sample freq set to %lld Hz", current_sample_freq);
