@@ -171,17 +171,18 @@ int cw_tone_execute(float complex sample)
     cw_power += crealf(sample) * crealf(sample) + cimagf(sample) * cimagf(sample);
 
     // Coarse autocorrelation: R = sum of buf[n+lag] * conj(buf[n])
-    // The pairs affected by replacing buf[idx] are:
-    //   (a) pairs where buf[idx] is the "late" element:  buf[idx] * conj(buf[idx - lag])
-    //   (b) pairs where buf[idx] is the "early" element: buf[idx + lag] * conj(buf[idx])
+    // Replacing buf[idx] with `sample` changes two pairs:
+    //   (a) buf[idx] is the "late" element:  buf[idx] * conj(buf[idx - lag])
+    //   (b) buf[idx] is the "early" element: buf[idx + lag] * conj(buf[idx])
+    // The four-term update telescopes via a shared difference:
+    //   ΔR = (sample - old)·conj(buf_early) + buf_late·conj(sample - old)
+    // halving the complex-multiply count from 4 to 2.
     int idx_early_a = (cw_buf_idx - CW_TONE_COARSE_LAG + CW_TONE_LEN) % CW_TONE_LEN;
     int idx_late_b  = (cw_buf_idx + CW_TONE_COARSE_LAG) % CW_TONE_LEN;
 
-    // Remove old contributions, add new
-    cw_autocorr -= old_sample * conjf(cw_buf[idx_early_a]);
-    cw_autocorr += sample     * conjf(cw_buf[idx_early_a]);
-    cw_autocorr -= cw_buf[idx_late_b] * conjf(old_sample);
-    cw_autocorr += cw_buf[idx_late_b] * conjf(sample);
+    float complex diff = sample - old_sample;
+    cw_autocorr += diff * conjf(cw_buf[idx_early_a])
+                 + cw_buf[idx_late_b] * conjf(diff);
 
     cw_buf_idx = (cw_buf_idx + 1) % CW_TONE_LEN;
 
