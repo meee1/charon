@@ -787,8 +787,6 @@ void do_process_iq16(const int16_t i, const int16_t q) {
   QF = ((float) q) * (1.0f/32768.0f);
   sample = (float complex) (IF + _Complex_I * QF);
 
-  bump_nco();
-  do_ofdm_mix_down(sample, &sample);
   do_ofdm_rx(sample);
 
 }
@@ -831,10 +829,7 @@ void do_process_iq16_batch(const int16_t *buf, int count) {
 #endif
 
     for(j = 0; j < n; j++) {
-      sample = iq_batch[j];
-      bump_nco();
-      do_ofdm_mix_down(sample, &sample);
-      do_ofdm_rx(sample);
+      do_ofdm_rx(iq_batch[j]);
     }
 
     buf += n * 2;
