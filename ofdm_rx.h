@@ -1,5 +1,6 @@
 /* This file was automatically generated.  Do not edit! */
 void do_ofdm_rx(float complex sample);
+void do_ofdm_rx_batch(float complex *samples,int n);
 void init_ofdm_rx(void);
 void ofdm_rx_set_loopback(int enable);
 void ofdm_rx_reset(void);
