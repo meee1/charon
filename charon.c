@@ -803,19 +803,16 @@ void do_process_iq16_batch(const int16_t *buf, int count) {
     int j;
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    // Load 4 IQ pairs deinterleaved (vld2 splits I/Q lanes), convert to
+    // float, scale, then re-interleave back into iq_batch as {re,im} pairs
+    // (which matches the float complex memory layout).
     float32x4_t scale = vdupq_n_f32(1.0f/32768.0f);
     for(j = 0; j + 3 < n; j += 4) {
-      int16x4_t vi = {buf[j*2], buf[(j+1)*2], buf[(j+2)*2], buf[(j+3)*2]};
-      int16x4_t vq = {buf[j*2+1], buf[(j+1)*2+1], buf[(j+2)*2+1], buf[(j+3)*2+1]};
-      float32x4_t fi = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vi)), scale);
-      float32x4_t fq = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vq)), scale);
-      float fi_arr[4], fq_arr[4];
-      vst1q_f32(fi_arr, fi);
-      vst1q_f32(fq_arr, fq);
-      iq_batch[j]   = fi_arr[0] + _Complex_I * fq_arr[0];
-      iq_batch[j+1] = fi_arr[1] + _Complex_I * fq_arr[1];
-      iq_batch[j+2] = fi_arr[2] + _Complex_I * fq_arr[2];
-      iq_batch[j+3] = fi_arr[3] + _Complex_I * fq_arr[3];
+      int16x4x2_t iq = vld2_s16(&buf[j*2]);
+      float32x4_t fi = vmulq_f32(vcvtq_f32_s32(vmovl_s16(iq.val[0])), scale);
+      float32x4_t fq = vmulq_f32(vcvtq_f32_s32(vmovl_s16(iq.val[1])), scale);
+      float32x4x2_t out = { { fi, fq } };
+      vst2q_f32((float *)&iq_batch[j], out);
     }
     for(; j < n; j++) {
       iq_batch[j] = ((float)buf[j*2]) * (1.0f/32768.0f)
