@@ -7,8 +7,6 @@ void ofdm_rx_reset_nco(void);
 void ofdm_rx_apply_pending_xo(void);
 int ofdm_rx_callback(unsigned char *_header,int _header_valid,unsigned char *_payload,unsigned int _payload_len,int _payload_valid,framesyncstats_s _stats,void *_userdata);
 int ofdm_rx_state();
-void do_ofdm_mix_down(float complex sample,float complex *y);
-void bump_nco();
 extern int did_rx_ok;
 extern int loopback_rx_ok;
 extern unsigned char loopback_rx_payload[];
