@@ -431,11 +431,17 @@ void do_ofdm_rx(float complex sample) {
 // gate; cw_tone_execute itself short-circuits cheaply once detected.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_rx_batch(float complex *samples, int n) {
-  if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
+  // Run the CW-tone correlator only when (a) framesync is hunting for
+  // PLCP and (b) the correlator hasn't already latched a detection.  After
+  // a successful detection cw_tone_execute short-circuits cheaply, but
+  // between back-to-back RX frames the framesync drops back to SEEKPLCP
+  // while cw_detected stays latched — without this gate we'd run an
+  // n-iteration no-op loop on every batch in that state.
+  if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP && !cw_tone_was_detected()) {
     for (int i = 0; i < n; i++) {
       if (cw_tone_execute(samples[i])) {
         apply_cw_tone_detection();
-        break;   // cw_tone latches on detection; remaining calls are no-ops
+        break;
       }
     }
   }
