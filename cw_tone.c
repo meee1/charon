@@ -61,6 +61,12 @@
 #define CW_TONE_FREQ         0.25f   // cycles/sample (Fs/4 = 350 kHz at 1.4 MHz)
 #define CW_TONE_GUARD        16      // zero-sample guard between CW tone and OFDM preamble
 
+// Pre-computed constants for the per-sample metric check.  power_scaled =
+// cw_power * (coarse_pairs / CW_TONE_LEN); the threshold check is squared
+// to avoid sqrtf and division on every sample.
+#define CW_POWER_SCALE_RATIO ((float)(CW_TONE_LEN - CW_TONE_COARSE_LAG) / (float)CW_TONE_LEN)
+#define CW_TONE_CORR_THRESH_SQ (CW_TONE_CORR_THRESH * CW_TONE_CORR_THRESH)
+
 // ---------------------------------------------------------------------------
 // Module state
 // ---------------------------------------------------------------------------
@@ -186,13 +192,18 @@ int cw_tone_execute(float complex sample)
     if (cw_power < CW_TONE_PWR_THRESH)
         return 0;
 
-    int coarse_pairs = CW_TONE_LEN - CW_TONE_COARSE_LAG;
-    float power_scaled = cw_power * (float)coarse_pairs / (float)CW_TONE_LEN;
-    float metric = cabsf(cw_autocorr) / power_scaled;
-    cw_peak_metric = metric;
+    // Squared threshold: |R|/P_s >= thresh  <=>  |R|^2 >= (thresh*P_s)^2.
+    // Avoids sqrtf and division on every sample.
+    float power_scaled = cw_power * CW_POWER_SCALE_RATIO;
+    float corr_sq = crealf(cw_autocorr) * crealf(cw_autocorr)
+                  + cimagf(cw_autocorr) * cimagf(cw_autocorr);
+    float thresh_sq = CW_TONE_CORR_THRESH_SQ * power_scaled * power_scaled;
 
-    if (metric < CW_TONE_CORR_THRESH)
+    if (corr_sq < thresh_sq)
         return 0;
+
+    // Detected: compute the unsquared metric for diagnostics.
+    cw_peak_metric = sqrtf(corr_sq) / power_scaled;
 
     float coarse_cfo = cargf(cw_autocorr) / (2.0f * (float)M_PI * (float)CW_TONE_COARSE_LAG);
 
