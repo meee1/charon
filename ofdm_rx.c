@@ -386,6 +386,24 @@ void ofdm_rx_reset_nco(void) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Apply a CW-tone CFO estimate to the inner NCO and queue the XO correction.
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+static void apply_cw_tone_detection(void) {
+  float cfo = cw_tone_get_freq_offset();   // cycles/sample
+  nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
+  // Defer XO correction — applying it now would cause PLL re-lock
+  // and corrupt the OFDM frame that immediately follows the CW tone.
+  if (cfo != 0.0f) {
+    pending_xo_cfo = cfo;
+    pending_xo_valid = 1;
+  }
+  fprintf(stderr, "\nCW_TONE: CFO=%.6f rad/samp (%.1f Hz, metric=%.3f)",
+          2.0f * (float)M_PI * cfo,
+          cfo * (float)sample_freq_hz,
+          cw_tone_get_peak());
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
 void do_ofdm_rx(float complex sample) {
   // While the frame-synchronizer is hunting for the PLCP preamble, run the
   // CW tone correlator in parallel.  If a CW tone is detected, apply the
@@ -393,20 +411,33 @@ void do_ofdm_rx(float complex sample) {
   // better frequency starting point.  The XO correction is deferred until
   // after the frame completes to avoid PLL re-lock disrupting the IQ stream.
   if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
-    if (cw_tone_execute(sample)) {
-      float cfo = cw_tone_get_freq_offset();   // cycles/sample
-      nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
-      // Defer XO correction — applying it now would cause PLL re-lock
-      // and corrupt the OFDM frame that immediately follows the CW tone.
-      if (cfo != 0.0f) {
-        pending_xo_cfo = cfo;
-        pending_xo_valid = 1;
-      }
-      fprintf(stderr, "\nCW_TONE: CFO=%.6f rad/samp (%.1f Hz, metric=%.3f)",
-              2.0f * (float)M_PI * cfo,
-              cfo * (float)sample_freq_hz,
-              cw_tone_get_peak());
-    }
+    if (cw_tone_execute(sample))
+      apply_cw_tone_detection();
   }
   ofdmflexframesync_execute(fs, &sample, 1);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Batched RX: feeds N samples through the CW-tone correlator (only while
+// framesync is in SEEKPLCP at the start of the batch) and then through
+// ofdmflexframesync_execute as a single call.
+//
+// Correctness vs the per-sample path: the CW tone is followed by a 16-sample
+// zero guard before the OFDM PLCP preamble, and liquid-dsp's framesync does
+// not consult nco_rx while in SEEKPLCP.  Setting nco_rx after running the
+// correlator over the batch — even if the CW detection happens mid-batch —
+// still occurs before the framesync reaches the PLCP/payload stages where
+// nco_rx is actually used.  The state check at start-of-batch is a coarse
+// gate; cw_tone_execute itself short-circuits cheaply once detected.
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void do_ofdm_rx_batch(float complex *samples, int n) {
+  if (_qq->state == OFDMFRAMESYNC_STATE_SEEKPLCP) {
+    for (int i = 0; i < n; i++) {
+      if (cw_tone_execute(samples[i])) {
+        apply_cw_tone_detection();
+        break;   // cw_tone latches on detection; remaining calls are no-ops
+      }
+    }
+  }
+  ofdmflexframesync_execute(fs, samples, (unsigned int)n);
 }

@@ -825,9 +825,7 @@ void do_process_iq16_batch(const int16_t *buf, int count) {
     }
 #endif
 
-    for(j = 0; j < n; j++) {
-      do_ofdm_rx(iq_batch[j]);
-    }
+    do_ofdm_rx_batch(iq_batch, n);
 
     buf += n * 2;
     count -= n;
