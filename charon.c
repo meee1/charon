@@ -793,7 +793,10 @@ void do_process_iq16(const int16_t i, const int16_t q) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define IQ_BATCH_SIZE 256
+// 1024 float complex samples = 8 KB; comfortably fits Cortex-A9 32 KB L1
+// D-cache.  With the 8192-sample IIO RX buffer this means at most 8
+// do_ofdm_rx_batch invocations per refill instead of 32.
+#define IQ_BATCH_SIZE 1024
 static float complex iq_batch[IQ_BATCH_SIZE];
 
 void do_process_iq16_batch(const int16_t *buf, int count) {
