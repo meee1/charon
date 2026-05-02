@@ -1,5 +1,4 @@
 /* This file was automatically generated.  Do not edit! */
-void do_process_iq16(const int16_t i,const int16_t q);
 void do_process_iq16_batch(const int16_t *buf, int count);
 void check_agc(void);
 void lbt_backoff(void);
