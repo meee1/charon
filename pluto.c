@@ -236,6 +236,13 @@ struct iio_context * pluto_init_txrx() {
 
       p_inc = iio_buffer_step(rxbuf);
       fprintf(stderr, "\n[pluto] RX buffer created, step=%td", p_inc);
+      // pluto_receive's hot path assumes p_inc == 4 (interleaved int16 IQ
+      // pairs).  Bail loudly if the kernel ever changes the scan layout
+      // rather than silently falling back to a slow scalar path.
+      if (p_inc != 4) {
+        fprintf(stderr, "\n[pluto] FATAL: unexpected RX buffer step=%td (expected 4)", p_inc);
+        exit(1);
+      }
      }
 
     //TX Buffer
@@ -716,8 +723,8 @@ int pluto_receive() {
     more_data=1;
   }
 
-  if(p_inc == 4 && n_rx > 0) {
-    // fast path: samples are contiguous int16 IQ pairs
+  // Samples are contiguous int16 IQ pairs (validated at init: p_inc == 4).
+  if(n_rx > 0) {
     int avail = (p_end - p_dat) / 4;
     if(avail > n_rx) avail = n_rx;
     rx_sample_count += avail;
@@ -726,15 +733,6 @@ int pluto_receive() {
     n_rx -= avail;
     if(n_rx == 0) {
       more_data = (p_dat != p_end) ? 1 : 0;
-    }
-  } else {
-    for ( ;p_dat < p_end; p_dat += p_inc) {
-      do_process_iq16( ((const int16_t*)p_dat)[0], ((const int16_t*)p_dat)[1] );
-      rx_sample_count++;
-      if(--n_rx==0) {
-        more_data = (p_dat!=p_end) ? 1 : 0;
-        break;
-      }
     }
   }
 
