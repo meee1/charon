@@ -216,8 +216,14 @@ struct iio_context * pluto_init_txrx() {
 
     //RX Buffer
     if(!pluto_rx_initialized) {
-      fprintf(stderr, "\n[pluto] creating RX buffer (70000 samples)...");
-      rxbuf = iio_device_create_buffer(rx_dev, 70000, false);
+      // 8192 samples ≈ 5.9 ms at 1.4 MHz.  Bigger buffers add ACK tail
+      // latency (a frame received early in a refill window has to wait
+      // for the buffer to drain before the demodulator sees it); smaller
+      // buffers raise refill-syscall rate.  At 1.4 MS/s this is ~170
+      // refills/sec, which is well under any meaningful overhead, while
+      // staying comfortably below the 25 ms default ack_delay_timeout.
+      fprintf(stderr, "\n[pluto] creating RX buffer (8192 samples)...");
+      rxbuf = iio_device_create_buffer(rx_dev, 8192, false);
 
 
       if (!rxbuf) {
