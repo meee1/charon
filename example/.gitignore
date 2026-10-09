@@ -1,6 +1,7 @@
 # Compiled binaries
 ofdm_loopback_example
 ofdm_file_transfer
+ofdm_channel_test
 
 # Object files
 *.o
