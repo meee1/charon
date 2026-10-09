@@ -234,10 +234,19 @@ int transmit_file(const char *filename,
                 float complex interp_samples[DECIMATE_INTERPOLATE_FACTOR];
                 firinterp_crcf_execute(interp, symbol_buffer[i], interp_samples);
                                 
-                for (int j = 0; j < DECIMATE_INTERPOLATE_FACTOR; j++) {
-                    if (tx_index < total_samples) {
-                        tx_buffer[tx_index++] = interp_samples[j];
+                if (tx_index + DECIMATE_INTERPOLATE_FACTOR > total_samples) {
+                    total_samples *= 2;
+                    float complex *grown = realloc(tx_buffer, total_samples * sizeof(float complex));
+                    if (!grown) {
+                        fprintf(stderr, "Error: Cannot grow TX buffer\n");
+                        free(tx_buffer);
+                        free(file_data);
+                        return -1;
                     }
+                    tx_buffer = grown;
+                }
+                for (int j = 0; j < DECIMATE_INTERPOLATE_FACTOR; j++) {
+                    tx_buffer[tx_index++] = interp_samples[j];
                 }
             }
         }
