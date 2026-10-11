@@ -109,6 +109,9 @@ typedef struct {
   double txcal_suppress_db;
   // TX->own RX coupling (inf = isolated)
   double self_isolation_db;
+  // 0: the node's xo_correction / DCXO writes have no effect (measures raw
+  // PHY tolerance to CFO/SFO); the node still sees its writes succeed
+  int    osc_correctable;
 } node_cfg;
 
 typedef struct {
@@ -161,6 +164,7 @@ static void set_defaults(void) {
     c->track_time_ms = 50.0;
     c->txcal_suppress_db = 40.0;
     c->self_isolation_db = INFINITY;
+    c->osc_correctable = 1;
     for (int j = 0; j < MAX_NODES; j++) {
       link_cfg *l = &lcfg[i][j];
       memset(l, 0, sizeof(*l));
@@ -202,7 +206,7 @@ static int set_node_key(node_cfg *c, const char *k, const char *v) {
   KD(nf_db) KD(rx_dc_dbfs) KD(rx_dc_phase_deg) KD(rx_iq_gain_db) KD(rx_iq_phase_deg)
   KD(tx_iq_gain_db) KD(tx_iq_phase_deg) KD(tx_lo_leak_dbc)
   KI(honour_tracking) KD(track_suppress_db) KD(track_time_ms) KD(txcal_suppress_db)
-  KD(self_isolation_db)
+  KD(self_isolation_db) KI(osc_correctable)
 #undef KD
 #undef KI
   return -1;
@@ -399,6 +403,7 @@ static double node_dcxo_ppm(const node_t *n, const node_cfg *c) {
 static double node_k(int i) {
   const node_t *n = &nodes[i];
   const node_cfg *c = &ncfg[i];
+  if (!c->osc_correctable) return 1.0 + (c->ppm + n->walk_ppm) * 1e-6;
   double ppm = c->ppm + n->walk_ppm + node_dcxo_ppm(n, c);
   return (1.0 + ppm * 1e-6) * ((double)SIM_XO_NOMINAL_HZ / (double)n->xo_corr);
 }
@@ -830,12 +835,22 @@ int main(int argc, char **argv) {
         handle_msg(zmq_msg_data(&m), zmq_msg_size(&m));
     }
     now = now_s();
-    if (now < t_next) continue;
+    if (now < t_next) {
+      // zmq_poll only has ms resolution: sleep out the sub-ms remainder
+      // in short steps instead of spinning.
+      double rem = t_next - now;
+      if (rem < 0.001) {
+        struct timespec ts = { 0, (long)((rem < 0.0002 ? rem : 0.0002) * 1e9) };
+        nanosleep(&ts, NULL);
+      }
+      continue;
+    }
 
     tick();
     t_next += tick_s;
     if (now - t_next > 0.05) {      // fell >50 ms behind: resync, count it
       overruns++;
+      fprintf(stderr, "rfchan: overrun at t=%.2f s, %.0f ms behind real time\n", sim_t(), (now - t_next) * 1e3);
       t_next = now;
     }
     if (sim_t() >= t_report) {
