@@ -123,13 +123,14 @@ The tone is offset from DC to avoid carrier leakage in the AD9361 direct-convers
 ### MAC Layer Detail (`charon.c`)
 
 `main_loop()` implements CSMA with listen-before-talk:
-1. Call `pluto_receive()` continuously while channel is active (`OFDMFRAMESYNC_STATE_SEEKPLCP` not set)
+1. Call `pluto_receive()` continuously while channel is active (`OFDMFRAMESYNC_STATE_SEEKPLCP` not set), and while the frame in flight waits for its ACK (stops as soon as the ACK arrives)
 2. AGC is checked periodically (fast: 10 ms, slow: 1 s)
-3. After channel clears, check for pending retransmissions (exponential backoff with randomness)
-4. Read new frame from TAP device if no retry pending
+3. After channel clears, retransmit the frame in flight if its ACK timed out (exponential backoff with randomness). Every transmission, the last retry included, gets the full ACK wait before the frame is given up
+4. Read a new frame from the TAP device only when nothing is in flight or queued (`tap_buffer` is never overwritten while a frame waits for the channel)
 5. Transmit after `symbol_delay_timeout` has elapsed
 6. Set `tx_retry` to `max_short_retrans` (<128 B frames) or `max_long_retrans` (>=128 B)
-7. Broadcast frames get `bcast_retrans` transmissions with no ACK wait
+7. Broadcast frames are repeated `bcast_retrans` times after a short random gap, with no ACK wait; receivers drop the repeats by pid
+8. RX drops CRC-valid frames shorter than the Charon header or longer than `MAX_FRAME_LEN`
 
 ## Architecture and Conventions
 
@@ -185,7 +186,9 @@ The tone is offset from DC to avoid carrier leakage in the AD9361 direct-convers
 | `OFDM_FEC0` | `LIQUID_FEC_NONE` | Inner FEC |
 | `OFDM_FEC1` | `LIQUID_FEC_SECDED7264` | Outer FEC |
 | `OFDM_CRC` | `LIQUID_CRC_32` | Frame CRC |
-| `PAYLOAD_LEN` | 1514 | Max frame payload (bytes) |
+| `PAYLOAD_LEN` | 1514 | Payload size used by tests and examples (bytes) |
+| `TAP_MTU` | 2342 | `ofdm0` MTU |
+| `MAX_FRAME_LEN` | `TAP_MTU + 18` | Largest Ethernet frame read from / written to `ofdm0` (MTU + header + VLAN tag) |
 | `RX_TIMEOUT` | 4096 | RX loop iterations before timeout |
 
 ## Critical Constraints (DO NOT)
@@ -247,7 +250,7 @@ sim/netns_run.sh                             # same, rootless (user namespaces, 
 
 ## Runtime Configuration
 
-All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`; `CHARON_ENV_FILE=<file>` reads `key=value` lines from a file instead). Unset variables fall back to compiled-in defaults:
+All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`; `CHARON_ENV_FILE=<file>` reads `key=value` lines from a file instead). Unset or empty variables fall back to compiled-in defaults, as do timeouts <= 0 and `max_tcp_segs` < 1 (negative retry counts are clamped to 0):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -259,7 +262,7 @@ All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-dev
 | `tx_output_power_minus_dbm` | 10 | TX power stored as positive; negated in code (-10 dBm / 100 uW, FCC Part 15) |
 | `max_short_retrans` | 8 | Retries for <128 byte frames |
 | `max_long_retrans` | 1 | Retries for >=128 byte frames |
-| `bcast_retrans` | 1 | Broadcast frame retransmissions |
+| `bcast_retrans` | 1 | Broadcast repeats (extra transmissions, deduplicated by the receiver) |
 | `bat_ogm_interval` | 10000 | Batman OGM interval (ms) |
 | `ack_delay_timeout` | 25000 | ACK wait timeout (usec) |
 | `symbol_delay_timeout` | `(OFDM_M+CP_LEN+TAPER_LEN)*2` ≈ 268 | TX delay after RX (usec) |

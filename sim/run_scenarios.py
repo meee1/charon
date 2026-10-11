@@ -322,9 +322,14 @@ def broadcast(res):
     res.add_run(r)
     d = r.delivery(0, 1)
     res.metric("delivery", d)
-    # Broadcasts go out exactly once (bcast_retrans has no effect, see the
-    # review), so every single-frame loss counts; ~2% is normal here.
-    res.check("delivery >= 95%", d >= 0.95, "%.1f%%" % (100 * d))
+    # bcast_retrans=1 (default): each broadcast goes out twice, the receiver
+    # drops the second copy by pid.
+    res.check("delivery >= 98%", d >= 0.98, "%.1f%%" % (100 * d))
+    dups = r.count(1, r"dropping duplicate")
+    rx = r.stat(1).get("rx_ok", 0)
+    res.metric("dup_drops", dups)
+    res.check("repeats sent and deduplicated", rx and dups >= 0.8 * rx and r.stat(1).get("dup", 0) == 0,
+              "%d repeats dropped for %d frames, %d dups reached the host" % (dups, rx, r.stat(1).get("dup", 0)))
 
 
 @scenario()
@@ -650,6 +655,84 @@ def equal_senders_pid(res):
     res.metric("dup_drops", dups)
     res.check("duplicate drops < 5% of ACKed frames", acked and dups < 0.05 * acked, "%d of %d" % (dups, acked))
     res.check("B receives >= 85%", r.delivery(None, 1) >= 0.85, "%.1f%%" % (100 * r.delivery(None, 1)))
+
+@scenario(quick=True)
+def mac_throughput(res):
+    """Saturated one-way unicast: the ACK wait must end as soon as the ACK arrives."""
+    r = run_sim("mac_throughput", 2, ["link.0-1.loss_db=70"], traffic={0: (150, [1], 200)}, duration=20)
+    res.add_run(r)
+    fps = r.stat(1).get("rx_ok", 0) / 20.0
+    res.metric("frames_per_s", fps)
+    # The old loop waited the full ack_delay_timeout (25 ms) after every
+    # frame: ~37 frames/s whatever the link could do.
+    res.check("> 60 frames/s", fps > 60, "%.0f frames/s" % fps)
+    res.check("no corrupt payloads", r.stat(1).get("rx_bad", 1) == 0)
+
+
+@scenario()
+def lossy_retries(res):
+    """Marginal link, 1000-byte frames, default max_long_retrans=1: the last retry waits for its ACK too."""
+    # The old loop moved on to the next frame right after the final retry, so
+    # that retry's late ACK was taken for the next frame, which then wasn't
+    # retried if lost.
+    r = run_sim("lossy_retries", 2, ["link.0-1.loss_db=83"],
+                traffic={0: (5, [1], 1000)}, duration=30)
+    res.add_run(r)
+    d = r.delivery(0, 1)
+    retries = r.count(0, r"tx_retry=")
+    res.metric("delivery", d)
+    res.metric("retransmissions", retries)
+    res.metric("snr_db", r.snr(0, 1))
+    res.check("link is lossy (retransmissions happen)", retries >= 10, "%d" % retries)
+    res.check("delivery >= 97%", d >= 0.97, "%.1f%%" % (100 * d))
+
+
+@scenario(quick=True)
+def mixed_load(res):
+    """Unicast and broadcast both ways at once: frames queued behind a busy channel must not be lost."""
+    r = run_sim("mixed_load", 3, ["link.*.loss_db=70"],
+                traffic={0: (15, [1, 2], 200), 1: (15, [0], 200), 2: (10, "bcast", 200)}, duration=30)
+    res.add_run(r)
+    # node 1 hears node 0 and node 2, so use the generator totals
+    g = sum(r.stat(i).get("gen", 0) for i in range(3))
+    rx = sum(r.stat(i).get("rx_ok", 0) for i in range(3))
+    lost = sum(r.stat(i).get("lost", 0) for i in range(3))
+    d = rx / (rx + lost) if rx + lost else 0.0
+    res.metric("generated", g)
+    res.metric("delivery", d)
+    # The old loop re-read the TAP device while a frame waited for the
+    # channel, overwriting or dropping it: ~85% here.  What's left now is
+    # collisions between three busy nodes.
+    res.check("delivery >= 92%", d >= 0.92, "%.1f%% (%d lost of %d)" % (100 * d, lost, rx + lost))
+
+
+@scenario(quick=True)
+def full_mtu(res):
+    """Frames up to the ofdm0 MTU (2342) get through intact."""
+    r = run_sim("full_mtu", 2, ["link.0-1.loss_db=70"], node_env={"*": {"max_long_retrans": 4}},
+                traffic={0: (3, [1], 2314)}, duration=20)
+    res.add_run(r)
+    st = r.stat(1)
+    d = r.delivery(0, 1)
+    res.metric("delivery", d)
+    res.check("full-MTU frames arrive", st.get("rx_ok", 0) >= 30 and d >= 0.95,
+              "%d frames, %.1f%%" % (st.get("rx_ok", 0), 100 * d))
+    res.check("no corrupt payloads", st.get("rx_bad", 1) == 0)
+
+
+@scenario(quick=True)
+def bad_config(res):
+    """Empty and zero config values fall back to defaults instead of crashing."""
+    r = run_sim("bad_config", 2, ["link.0-1.loss_db=70"],
+                node_env={"*": {"ack_delay_timeout": "", "symbol_delay_timeout": 0,
+                                "max_tcp_segs": "", "bcast_retrans": -3}},
+                traffic=TWO_WAY, duration=15)
+    res.add_run(r)
+    res.check("nodes still running at the end", all(rc in (0, -signal.SIGTERM) for rc in r.returncodes),
+              "return codes %s" % r.returncodes)
+    d = min(r.delivery(0, 1), r.delivery(1, 0))
+    res.check("delivery both ways >= 95%", d >= 0.95, "%.1f%%" % (100 * d))
+
 
 @scenario()
 def agc_dynamic_range(res):

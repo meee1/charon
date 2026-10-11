@@ -64,10 +64,12 @@ static char *load_rx_path = NULL;
 static int max_retrans;
 
 
-static uint8_t tap_buffer[2342];
+static uint8_t tap_buffer[MAX_FRAME_LEN];
 static int n;
 
-static int tx_retry;
+static int tx_retry;      //retransmissions left for the frame in flight
+static int awaiting_ack;  //frame in tap_buffer has been sent and isn't finished yet
+static int tx_sent;       //last do_tx() put the frame on the air
 static timer_obj *ack_timer;
 static timer_obj *symbol_timer;
 static timer_obj *agc_timer_fast;
@@ -550,7 +552,7 @@ int main (int argc, char **argv) {
 ///////////////////////////////////////////////////////////////////////////////////////
 void do_got_ack() {
   fprintf(stderr, ", time: %lld usec", timer_elapsed_usec(ack_timer) );
-  got_ack=1;
+  if(awaiting_ack && !is_broadcast) got_ack=1;  //an ACK with nothing in flight is stale
 }
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -597,6 +599,8 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
    dst_mac[5] );
 
  
+ tx_sent = 0;
+
  if(is_broadcast==0x00) {
    if(!is_retrans) is_route = is_batman_route(bat_route, dst_ofdm0_mac);
 
@@ -620,9 +624,10 @@ void do_tx( uint8_t *buff, int len, int is_retrans, uint8_t *dst_mac, uint8_t is
 
   fprintf(stderr,"\nTAPDEV_IN -> RF_OUT , len=%d", n);
   do_ofdm_tx(buff, len, is_retrans, 1, is_broadcast, dst_ofdm0_mac, pid);
+  tx_sent = 1;
   timer_reset(ack_timer);
 
-  if(tx_retry>0 && !is_broadcast) fprintf(stderr,", tx_retry=%d", (max_retrans+1-tx_retry));
+  if(is_retrans) fprintf(stderr,", tx_retry=%d", max_retrans-tx_retry);
 
   pluto_set_out_gain( -80 );
   ofdm_rx_apply_pending_xo();  // apply deferred XO correction while stream is idle
@@ -698,9 +703,9 @@ void main_loop(void) {
   //read, but don't wait around
   pluto_receive();
 
-  //read while receiving
-  while( ofdm_rx_state() != OFDMFRAMESYNC_STATE_SEEKPLCP || 
-            (tx_retry > 0 && timer_elapsed_usec(ack_timer)<ack_timeout) ) { //make sure we get ACK
+  //read while receiving, and while waiting for the ACK of the frame in flight
+  while( ofdm_rx_state() != OFDMFRAMESYNC_STATE_SEEKPLCP ||
+            (awaiting_ack && !got_ack && timer_elapsed_usec(ack_timer)<ack_timeout) ) {
 
     pluto_receive();
 
@@ -717,57 +722,67 @@ void main_loop(void) {
     long long ack_elapsed = timer_elapsed_since(ack_timer, now_usec);
     long long sym_elapsed = timer_elapsed_since(symbol_timer, now_usec);
 
-    //do retry tx
-    if( tx_retry > 0 && got_ack==0) {
-
-        if( ack_elapsed >( ack_timeout ) && sym_elapsed > symbol_delay_timeout) {
-          ack_timeout = ack_delay_timeout;
-          int backoff_exp = max_retrans - tx_retry;
-          ack_timeout += (backoff_exp * backoff_exp) * (int) (symbol_delay_timeout+(random()%symbol_delay_timeout)); //exp backoff with randomness
-
-          do_tx(tap_buffer, n, 1, dst_mac, is_broadcast, current_pid);
-
-          if(tx_retry>0) {
-            tx_retry--;
+    //frame in flight: done when ACKed (unicast) or when its retransmissions
+    //are used up.  The last transmission gets the full ACK wait too, so its
+    //ACK can't be taken for the next frame's.
+    if( awaiting_ack ) {
+      if( got_ack ) {
+        awaiting_ack=0;
+        n=0;
+      }
+      else if( ack_elapsed > ack_timeout && sym_elapsed > symbol_delay_timeout ) {
+        if( tx_retry > 0 ) {
+          if( !is_broadcast ) {
+            ack_timeout = ack_delay_timeout;
+            int backoff_exp = max_retrans - tx_retry;
+            ack_timeout += (backoff_exp * backoff_exp) * (int) (symbol_delay_timeout+(random()%symbol_delay_timeout)); //exp backoff with randomness
           }
-          if(tx_retry==0) {
-             n = read_tap_dev(tap_buffer, sizeof(tap_buffer), dst_mac, &is_broadcast);
+          else {
+            ack_timeout = random()%symbol_delay_timeout;
+          }
+
+          tx_retry--;
+          do_tx(tap_buffer, n, 1, dst_mac, is_broadcast, current_pid);
+          if( !tx_sent ) {
+            awaiting_ack=0;
+            n=0;
           }
         }
-     }
-     else {
-       if(got_ack==1) {
-         got_ack=0;
-         n=0;
-         tx_retry=0;
-         //timer_reset(symbol_timer);
-       }
-       if(tx_retry==0) {
-         n = read_tap_dev(tap_buffer, sizeof(tap_buffer), dst_mac, &is_broadcast);
-       }
-     }
+        else {
+          awaiting_ack=0;   //no ACK: give up on this frame
+          n=0;
+        }
+      }
+    }
+
+    //read a new frame only once the previous one is finished, so a frame
+    //waiting for the channel is never overwritten
+    if( !awaiting_ack && n<=0 ) {
+      n = read_tap_dev(tap_buffer, sizeof(tap_buffer), dst_mac, &is_broadcast);
+    }
 
     tcp_share_backoff=0; //don't do this for now
     //start a new tx?
-    if(n>0 && tx_retry==0 && sym_elapsed>(symbol_delay_timeout+tcp_share_backoff) ) {  //leave some bw.  better sharing of multiple tcp connections
-
-      ack_timeout = ack_delay_timeout;
-
-      current_pid = (random()%ULONG_MAX); //used as unique identifier to allow droppng duplicate receptions of frames from re-transmission
-      do_tx(tap_buffer, n, 0, dst_mac, is_broadcast, current_pid);
+    if( !awaiting_ack && n>0 && sym_elapsed>(symbol_delay_timeout+tcp_share_backoff) ) {  //leave some bw.  better sharing of multiple tcp connections
 
       if(!is_broadcast) {
         if( n  < 128 ) max_retrans = max_short_retrans;
             else max_retrans = max_long_retrans;
-
-        tx_retry = max_retrans; //num retries 
-        got_ack=0;
+        ack_timeout = ack_delay_timeout;
       }
       else {
-        tx_retry=bcast_retrans; 
-        got_ack=1;  //don't wait between for reply
+        //broadcasts are never ACKed: repeat bcast_retrans times after a short random gap
+        max_retrans = bcast_retrans;
+        ack_timeout = random()%symbol_delay_timeout;
       }
+      tx_retry = max_retrans; //num retries 
+      got_ack=0;
 
+      current_pid = (random()%ULONG_MAX); //used as unique identifier to allow droppng duplicate receptions of frames from re-transmission
+      do_tx(tap_buffer, n, 0, dst_mac, is_broadcast, current_pid);
+
+      if( tx_sent && (!is_broadcast || tx_retry>0) ) awaiting_ack=1;
+      else n=0;
     }
 
   } 

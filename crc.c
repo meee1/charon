@@ -67,6 +67,7 @@ uint32_t crc32_range( uint8_t *ucBuffer, int32_t ulCount)
 /////////////////////////////////////////////////////////////////
 void add_dup(uint32_t pid)
 {
+  if(pid==0) return;   //0 marks an empty slot
   duplicates[dup_idx++] = pid;
   dup_idx &= (MAX_DUPES-1);
 }
@@ -78,8 +79,8 @@ int is_dup(uint32_t pid)
   int idx = dup_idx;
   for(i=0; i<MAX_DUPES; i++) {
     idx = (idx - 1) & (MAX_DUPES-1);
+    if(duplicates[idx]==0) return 0;   //empty slot: end of history (pid 0 is never a dup)
     if(duplicates[idx]==pid) return 1;
-    if(duplicates[idx]==0) return 0;
   }
 
   return 0;

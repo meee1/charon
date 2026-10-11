@@ -281,6 +281,21 @@ void read_config() {
     fprintf(stderr, "\ncould not find max_tcp_share_backoff in u-boot env.  setting to default of %d", max_tcp_share_backoff);
   }
 
+  //values that would crash or wedge the MAC: fall back to the defaults
+  if( ack_delay_timeout <= 0 ) {
+    ack_delay_timeout = DEFAULT_ACK_DELAY_TIMEOUT;
+    fprintf(stderr, "\nack_delay_timeout must be > 0.  using default of %d", ack_delay_timeout);
+  }
+  if( symbol_delay_timeout <= 0 ) {
+    symbol_delay_timeout = DEFAULT_SYMBOL_DELAY;
+    fprintf(stderr, "\nsymbol_delay_timeout must be > 0.  using default of %d", symbol_delay_timeout);
+  }
+  if( max_short_retrans < 0 ) max_short_retrans = 0;
+  if( max_long_retrans < 0 ) max_long_retrans = 0;
+  if( bcast_retrans < 0 ) bcast_retrans = 0;
+  if( max_tcp_share_backoff < 0 ) max_tcp_share_backoff = 0;
+  if( max_tcp_segs < 1 ) max_tcp_segs = DEFAULT_MAX_TCP_SEGS;   //a zero TCP window stalls every connection
+
   //pluto ip address for mesh-bridge (normally usb0)
   usb_ip32 = get_netif_ip("usb0", usb_ip);
   memset(cmd_str, 0x00, sizeof(cmd_str));

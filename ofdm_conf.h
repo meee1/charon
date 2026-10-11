@@ -32,6 +32,12 @@
 #define OFDM_MODULATION LIQUID_MODEM_QPSK
 #define PAYLOAD_LEN 1514 
 
+// ofdm0 MTU, and the largest frame read from / written to it: the MTU plus
+// an Ethernet header and a VLAN tag.  Over the air a frame is
+// MAX_FRAME_LEN + 18 bytes of Charon header (pid + eth_hdr) at most.
+#define TAP_MTU 2342
+#define MAX_FRAME_LEN (TAP_MTU + 18)
+
 #define OFDM_M 64
 #define CP_LEN  16 
 #define TAPER_LEN 2

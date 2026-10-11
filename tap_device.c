@@ -23,6 +23,7 @@
 #define _DEFAULT_SOURCE 1 //get rid of warning about usleep
 
 #include "timers.h"
+#include "ofdm_conf.h"
 
 #include <fcntl.h>
 #include <sys/types.h>
@@ -129,7 +130,7 @@ int init_tap_device(void) {
 		goto clean;
 	}
 
-	if (tuntap_set_mtu(dev, 2342) == -1) {
+	if (tuntap_set_mtu(dev, TAP_MTU) == -1) {
 		ret = 1;
 		goto clean;
 	}

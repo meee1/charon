@@ -27,7 +27,7 @@
 //   CHARON_SIM_TRAFFIC      mean frames/sec to offer (0 = receive only),
 //                           Poisson arrivals.  Setting this variable enables
 //                           traffic mode.
-//   CHARON_SIM_TRAFFIC_LEN  UDP payload bytes per frame (default 200)
+//   CHARON_SIM_TRAFFIC_LEN  UDP payload bytes per frame (default 200, max TAP_MTU-28)
 //   CHARON_SIM_PEERS        comma-separated peer IPs (unicast, round-robin)
 //                           or "bcast" for broadcast frames
 //   CHARON_SIM_NODE         node id used in log lines
@@ -49,6 +49,7 @@
 #include <math.h>
 
 #include "sim_traffic.h"
+#include "ofdm_conf.h"
 
 #define SIM_MAGIC        0x4353494dU   // "CSIM"
 #define ETH_HLEN_        14
@@ -149,7 +150,7 @@ void sim_traffic_init(const uint8_t *mac, uint32_t ip32) {
   pps = atof(getenv("CHARON_SIM_TRAFFIC"));
   if ((v = getenv("CHARON_SIM_TRAFFIC_LEN"))) payload_len = atoi(v);
   if (payload_len < (int)sizeof(sim_payload_hdr)) payload_len = sizeof(sim_payload_hdr);
-  if (payload_len > 1400) payload_len = 1400;
+  if (payload_len > TAP_MTU - IP_HLEN_ - UDP_HLEN_) payload_len = TAP_MTU - IP_HLEN_ - UDP_HLEN_;
   if ((v = getenv("CHARON_SIM_NODE"))) node_id = atoi(v);
 
   if ((v = getenv("CHARON_SIM_PEERS"))) {

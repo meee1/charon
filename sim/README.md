@@ -113,7 +113,7 @@ Leave out `CHARON_SIM_TRAFFIC` to get a real `ofdm0` TAP device (needs root).
 | `CHARON_SIM_NODE` | node index in rfchan |
 | `CHARON_SIM_TX_EP`, `CHARON_SIM_RX_EP` | rfchan endpoints (default `ipc:///tmp/charon_sim_{tx,rx}`) |
 | `CHARON_SIM_TRAFFIC` | mean frames/s (Poisson); enables traffic mode |
-| `CHARON_SIM_TRAFFIC_LEN` | UDP payload bytes (default 200) |
+| `CHARON_SIM_TRAFFIC_LEN` | UDP payload bytes (default 200, max 2314 = `TAP_MTU` − 28) |
 | `CHARON_SIM_PEERS` | comma-separated destination IPs, or `bcast` |
 | `CHARON_SIM_RX_DUMP` | write every received int16 IQ sample to this file |
 

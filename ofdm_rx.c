@@ -77,7 +77,7 @@ static int64_t total_bytes=0;
 
 static struct ofdmflexframesync_s *_q;
 static struct ofdmframesync_s *_qq;
-static uint8_t frame_buffer[2346];
+static uint8_t frame_buffer[MAX_FRAME_LEN];
 static int frame_len;
 
 //static nco_crcf ofdm_nco;
@@ -209,7 +209,8 @@ is_accept=0;
 
     // CRC-valid frame from a peer: its end-of-frame NCO frequency is a
     // reliable CFO measurement (see ofdm_rx_accumulate_xo_cfo).
-    if( _payload_len==6 || memcmp( &(ethhdr_charon->src_mac), ofdm0_mac, 6) != 0 )
+    if( _payload_len==6 || (_payload_len > (unsigned int) charon_added_length &&
+                            memcmp( &(ethhdr_charon->src_mac), ofdm0_mac, 6) != 0) )
       ofdm_rx_accumulate_xo_cfo();
 
     if( _payload_len==6) {
@@ -234,6 +235,13 @@ is_accept=0;
     }
     else {
       is_ack=0;
+
+      //too short for the Charon header, or too long for any frame we send
+      if( _payload_len <= (unsigned int) charon_added_length ||
+          _payload_len - charon_added_length > sizeof(frame_buffer) ) {
+        fprintf(stderr,"\nRF_IN-> dropped (bad length %u)", _payload_len);
+        return 0;
+      }
 
       if( ethhdr_charon->eth_type == htons( ETH_CHARON_TYPE ) ) {
         memcpy( &in_pid, &(charonframe->first_four), 4 );
@@ -332,14 +340,15 @@ is_accept=0;
 
     if(!is_ack ) { 
 
-      if( !is_broadcast && is_dup(in_pid) ) {
-        fprintf(stderr, "\nRF_IN->dropping duplicate.  sending ACK, gain: %lld", rx_gain);
+      //broadcasts are repeated bcast_retrans times, so dedup them too (no ACK)
+      if( is_dup(in_pid) ) {
+        fprintf(stderr, "\nRF_IN->dropping duplicate.%s gain: %lld", is_broadcast ? "" : "  sending ACK,", rx_gain);
         last_good_nco_freq = nco_crcf_get_frequency(_qq->nco_rx);
         if(!is_broadcast) do_send_ack(ack_mac);
         return 0;
       }
       
-      if(!is_broadcast) add_dup(in_pid);
+      add_dup(in_pid);
       if(!is_broadcast) do_send_ack(ack_mac);
 
       if( write_tap_dev(frame_buffer, frame_len) == frame_len) {
