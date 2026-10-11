@@ -52,16 +52,31 @@ Each scenario writes to `sim/runs/<name>/`:
 
 `sim/runs/summary.json` collects every check and metric.
 
-## Run the full network stack (root)
+## Run the full network stack
 
 ```bash
 sudo sim/netns_run.sh                                 # 3-node line A-B-C
 sudo sim/netns_run.sh --topology mesh --nodes 2
 sudo sim/netns_run.sh --batman off -s node.2.ppm=3 --keep
+sim/netns_run.sh                                      # as a normal user: rootless
 ```
 
-This creates one network namespace per node, each with a real `ofdm0` TAP
-device, then runs `ping` and `iperf3` across the simulated RF links.
+**Rootless** (the default when not run as root; force it with `--rootless`):
+each node runs under `unshare -Urn`, i.e. in its own user and network
+namespace. Inside it the node is root and can create `ofdm0`, and the script
+configures it with `nsenter --preserve-credentials`. Requirements:
+
+* **Unprivileged user namespaces allowed.** Some distros restrict them, e.g.
+  Ubuntu's `kernel.apparmor_restrict_unprivileged_userns`.
+* **`/dev/net/tun` readable and writable by you.** It's 0666 on most distros.
+* **Static routing only.** batman-adv isn't available rootless.
+
+The script checks the first two up front and says which one is missing.
+
+Either way, each node gets its own network namespace with a real `ofdm0` TAP
+device. Neighbours ping each other once to fill ARP, then the script runs
+`ping` and a 10 s minimum `iperf3` across the simulated RF links. The iperf3
+check passes only if more than 10 kbit/s arrives.
 
 * **batman-adv available:** Charon's own batman/bridge setup is used, with a
   dummy `usb0` in each namespace.

@@ -211,6 +211,7 @@ cd tests && make check
 make -C sim                                  # charon_sim + rfchan (host gcc, libzmq)
 python3 sim/run_scenarios.py --quick         # CI scenario subset, no root
 sudo sim/netns_run.sh                        # full stack: netns + TAP + ping/iperf3
+sim/netns_run.sh                             # same, rootless (user namespaces, static routing)
 ```
 - `charon_sim` links `pluto.c` (unmodified) against `sim/iio_zmq.c`, a fake libiio talking to `rfchan`
 - `rfchan` models CFO/SFO from per-node oscillators (incl. DCXO / `xo_correction` / ext refclk),
