@@ -646,9 +646,9 @@ static void test_sync_detection_timing(void)
     TEST_BEGIN("sync: detection fires within expected sample window");
     cw_tone_init();
 
-    // Feed exactly 128 DC tone samples. Detection requires filling the
-    // circular buffer (128 samples) then one full autocorrelation window.
-    // Detection should fire at or near sample 128.
+    // Feed a DC tone.  The window is full of tone at sample 128; the
+    // detector then waits CW_TONE_STALL samples for window power to stop
+    // rising before estimating, so it fires at 128 + CW_TONE_STALL.
     int detect_sample = -1;
     for (int n = 0; n < 256; n++) {
         if (cw_tone_execute(1.0f + 0.0f * _Complex_I)) {
@@ -657,10 +657,45 @@ static void test_sync_detection_timing(void)
         }
     }
     char msg[128];
-    snprintf(msg, sizeof(msg), "detected at sample %d (expected ~128)", detect_sample);
+    snprintf(msg, sizeof(msg), "detected at sample %d (expected %d)", detect_sample, 128 + CW_TONE_STALL);
     TEST_ASSERT_MSG(detect_sample >= 0, "tone should be detected");
-    // Should detect at sample 128 (after buffer fills)
-    TEST_ASSERT_MSG(detect_sample == 128, msg);
+    TEST_ASSERT_MSG(detect_sample == 128 + CW_TONE_STALL, msg);
+    TEST_PASS();
+}
+
+// Regression: noise, then the over-the-air frame layout (Fs/4 tone, 16-sample
+// guard, then OFDM-like data) at 18 dB SNR.  The metric crosses the threshold
+// when only ~10% of the window holds tone; estimating there gave CFO errors
+// of several kHz (seen in the RF channel simulator).  The estimate must come
+// from a (nearly) full window.
+static void test_sync_estimate_waits_for_full_window(void)
+{
+    TEST_BEGIN("sync: CFO estimated from a full tone window (noise lead-in, 18 dB SNR)");
+    const float fs = 1400000.0f;
+    const float cfos_hz[] = { 0.0f, 450.0f, -1800.0f, 6000.0f };
+    for (unsigned k = 0; k < sizeof(cfos_hz) / sizeof(cfos_hz[0]); k++) {
+        float cfo = cfos_hz[k] / fs;          // cycles/sample
+        float sigma = sqrtf(powf(10.0f, -18.0f / 10.0f) / 2.0f);
+        srand(4242 + k);
+        cw_tone_init();
+        int det = 0, n = 0, det_at = -1;
+        // 400 noise samples, 128 tone, 16 guard, 400 data
+        for (; n < 944 && !det; n++) {
+            float complex x;
+            if (n < 400) x = 0.0f;
+            else if (n < 528) x = cexpf(2.0f * (float)M_PI * _Complex_I * (0.25f + cfo) * (float)n);
+            else if (n < 544) x = 0.0f;
+            else x = 0.7f * (randn() + _Complex_I * randn());
+            if (cw_tone_execute(x + awgn(sigma))) { det = 1; det_at = n; }
+        }
+        float err_hz = (cw_tone_get_freq_offset() - cfo) * fs;
+        char msg[160];
+        snprintf(msg, sizeof(msg), "cfo %.0f Hz: det=%d at %d, est err %.1f Hz",
+                 cfos_hz[k], det, det_at, err_hz);
+        TEST_ASSERT_MSG(det, msg);
+        TEST_ASSERT_MSG(det_at >= 520 && det_at < 560, msg);
+        TEST_ASSERT_MSG(fabsf(err_hz) < 300.0f, msg);
+    }
     TEST_PASS();
 }
 
@@ -1184,6 +1219,7 @@ int main(void)
 
     // Sync timing
     RUN_TEST(test_sync_detection_timing);
+    RUN_TEST(test_sync_estimate_waits_for_full_window);
     RUN_TEST(test_sync_detection_after_noise_gap);
     RUN_TEST(test_sync_no_early_trigger);
 

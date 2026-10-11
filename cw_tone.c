@@ -84,6 +84,19 @@ static float complex cw_autocorr;      // lag-CW_TONE_COARSE_LAG autocorrelation
 static float         cw_power;         // total power in the buffer
 
 static float         cw_noise_power;   // last valid mean power (linear), survives reset
+// Detection waits for the window to fill with tone.  With thermal noise far
+// below the tone, |R|/P crosses the threshold when only ~10% of the window
+// holds tone, and an estimate taken there (lag-64 over a mostly empty
+// window) is off by kHz.  After the crossing the detector "arms" and keeps
+// sliding while window power is still rising (more tone entering), then
+// estimates once power plateaus or starts to fall (guard zeros entering).
+#define CW_TONE_STALL        8                              // samples without power growth
+#define CW_TONE_ARM_MAX      (CW_TONE_LEN + CW_TONE_GUARD)  // give up waiting after this
+#define CW_TONE_METRIC_MAX   1.05f   // tone+noise can't exceed 1; OFDM data can
+static int           cw_armed;
+static int           cw_armed_count;
+static int           cw_stall;
+static float         cw_power_max;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -104,6 +117,7 @@ void cw_tone_init(void)
     cw_autocorr    = 0.0f + 0.0f * _Complex_I;
     cw_power       = 0.0f;
     cw_noise_power = 0.0f;
+    cw_armed       = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -200,8 +214,31 @@ int cw_tone_execute(float complex sample)
                   + cimagf(cw_autocorr) * cimagf(cw_autocorr);
     float thresh_sq = CW_TONE_CORR_THRESH_SQ * power_scaled * power_scaled;
 
-    if (corr_sq < thresh_sq)
+    int above = corr_sq >= thresh_sq;
+
+    if (!cw_armed) {
+        if (!above)
+            return 0;
+        if (corr_sq > CW_TONE_METRIC_MAX * CW_TONE_METRIC_MAX * power_scaled * power_scaled)
+            return 0;
+        cw_armed       = 1;
+        cw_armed_count = 0;
+        cw_stall       = 0;
+        cw_power_max   = cw_power;
         return 0;
+    }
+
+    // Armed: wait while the tone is still filling the window.
+    cw_armed_count++;
+    if (cw_power > cw_power_max * (1.0f + 0.5f / (float)CW_TONE_LEN)) {
+        cw_power_max = cw_power;
+        cw_stall = 0;
+    } else {
+        cw_stall++;
+    }
+    if (above && cw_stall < CW_TONE_STALL && cw_armed_count < CW_TONE_ARM_MAX)
+        return 0;
+    cw_armed = 0;
 
     // Detected: compute the unsquared metric for diagnostics.
     cw_peak_metric = sqrtf(corr_sq) / power_scaled;
