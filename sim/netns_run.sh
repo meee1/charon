@@ -249,7 +249,7 @@ PIDS+=($!)
 sleep 1
 # Pass only if data actually arrived (> 10 kbit/s at the receiver)
 iperf_client() {
-  nx 0 iperf3 -c "$(ip_of $last)" -t "$DURATION" -J > "$RUN/iperf3.json" || return 1
+  nx 0 timeout $((DURATION + 40)) iperf3 -c "$(ip_of $last)" -t "$DURATION" -J > "$RUN/iperf3.json" || return 1
   python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))['end']['sum_received']['bits_per_second'] > 10e3 else 1)" \
     "$RUN/iperf3.json"
 }
@@ -269,6 +269,14 @@ if [ "$FAIL" != 0 ]; then
     nx $i ip neigh 2>&1 | sed 's/^/    /'
     echo "--- node$i: log tail"
     tr '\r' '\n' < "$RUN/node$i.log" | grep -av 'samples/sec\|noise_floor\|^$' | tail -15 | sed 's/^/    /'
+  done
+  echo "--- iperf3 client error / server log"
+  python3 -c "import json,sys; print('    ', json.load(open(sys.argv[1])).get('error'))" "$RUN/iperf3.json" 2>&1
+  tail -5 "$RUN/iperf3_server.log" 2>/dev/null | sed 's/^/    /'
+  for i in 0 $last; do
+    echo "--- node$i: TCP sockets and IP/TCP error counters"
+    nx $i ss -tni 2>&1 | sed 's/^/    /'
+    nx $i nstat -az 2>/dev/null | grep -E "CsumErrors|InErrors|TcpRetransSegs|TcpOutRsts|TcpInSegs|TcpOutSegs|IpInHdrErrors|IpInAddrErrors|IpForwDatagrams|TcpExtTCPSynRetrans|TcpAttemptFails|TcpExtListenDrops|TcpExtTCPTimeouts" | sed 's/^/    /'
   done
   echo "--- rfchan"; sed 's/^/    /' "$RUN/rfchan.log"
 fi
