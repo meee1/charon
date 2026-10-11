@@ -68,7 +68,12 @@ void tap_mac_from_ip(uint32_t ip32, char *mac_a) {
       (uint8_t) (random()%255),
       (uint8_t) (random()%255),
     (uint8_t) (random()%255 ));
-  srandom(time(NULL));
+  // Re-seed for everything else that uses random(): frame pids (duplicate
+  // detection at the receiver) and retransmission backoff.  Mix in the IP
+  // and pid: nodes started in the same second -- every Pluto boots with its
+  // clock at the epoch -- would otherwise share one sequence, and a
+  // receiver then drops one sender's frames as duplicates of another's.
+  srandom((unsigned)time(NULL) ^ ip32 ^ ((unsigned)getpid() << 16));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
