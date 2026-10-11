@@ -200,7 +200,7 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
       memcpy(dst_mac, &(ethhdr->dst_mac), 6);
 
        if( htons(ethhdr->eth_type)==0x0800 ) {
-         new_len = do_tcp_subs(buffer);
+         new_len = do_tcp_subs(buffer, nbytes);
          if(new_len > 0) nbytes = new_len;
        }
     break;
@@ -227,7 +227,7 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
             //fprintf(stderr,"\nbat_unicast, try tcp_sub");
             eth_hdr *ethhdr = (eth_hdr *) &(batucast->ethhdr);
             if( htons(ethhdr->eth_type)==ETH_IP_TYPE) {
-              new_len = do_tcp_subs((char *)ethhdr);
+              new_len = do_tcp_subs((char *)ethhdr, nbytes - (int)(sizeof(batman_unicast)+sizeof(eth_hdr)));
               if(new_len > 0) nbytes = new_len + sizeof(batman_unicast)+sizeof(eth_hdr); 
             }
           }
@@ -280,7 +280,7 @@ int write_tap_dev(char *buffer, int len) {
     case  ETH_IP_TYPE :
       //fprintf(stderr,"\neth_type: IP");
        if( htons(ethhdr->eth_type)==ETH_IP_TYPE ) {
-         new_len = do_tcp_subs(buffer);
+         new_len = do_tcp_subs(buffer, len);
          if(new_len > 0) len = new_len; 
        }
     break;
@@ -293,7 +293,7 @@ int write_tap_dev(char *buffer, int len) {
          //fprintf(stderr,"\nbat_unicast, try tcp_sub");
          eth_hdr *ethhdr = (eth_hdr *) &(batucast->ethhdr);
          if( htons(ethhdr->eth_type)==ETH_IP_TYPE) {
-           new_len = do_tcp_subs((char *)ethhdr);
+           new_len = do_tcp_subs((char *)ethhdr, len - (int)(sizeof(batman_unicast)+sizeof(eth_hdr)));
            if(new_len > 0) len = new_len + sizeof(batman_unicast)+sizeof(eth_hdr); 
          }
        }
