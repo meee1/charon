@@ -122,6 +122,53 @@ int ofdm_rx_state() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
+// XO (DCXO / xo_correction) tuning from CRC-valid frames.
+//
+// At the end of a frame liquid's nco_rx holds the frame's absolute CFO:
+// the S0 stage re-estimates it from the preamble (overwriting any CW-tone
+// pre-set) and pilot tracking refines it over the payload.  Taking it only
+// from CRC-valid frames means a false CW-tone detection or a corrupt frame
+// can never steer the XO, and averaging XO_CFO_AVG_FRAMES of them keeps
+// the number of XO writes (each a PLL re-lock) low.
+//
+// The averaged correction is applied after the frame completes (or when
+// the stream is idle) so the PLL re-lock doesn't disrupt the IQ stream.
+#define XO_CFO_AVG_FRAMES 8
+
+static double xo_cfo_sum = 0.0;          // cycles/sample
+static int    xo_cfo_count = 0;
+static float  pending_xo_cfo = 0.0f;     // cycles/sample
+static int    pending_xo_valid = 0;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+static void ofdm_rx_accumulate_xo_cfo(void) {
+  float cfo = nco_crcf_get_frequency(_qq->nco_rx) / (2.0f * (float)M_PI);   // cycles/sample
+
+  xo_cfo_sum += cfo;
+  if (++xo_cfo_count < XO_CFO_AVG_FRAMES)
+    return;
+
+  pending_xo_cfo = (float)(xo_cfo_sum / xo_cfo_count);
+  pending_xo_valid = 1;
+  xo_cfo_sum = 0.0;
+  xo_cfo_count = 0;
+  fprintf(stderr, "\nXO_CFO: avg of %d good frames = %.1f Hz",
+          XO_CFO_AVG_FRAMES, pending_xo_cfo * (float)sample_freq_hz);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void ofdm_rx_apply_pending_xo(void) {
+  if (pending_xo_valid) {
+    pluto_apply_pss_xo_correction(pending_xo_cfo);
+    pending_xo_valid = 0;
+    pending_xo_cfo = 0.0f;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
 int ofdm_rx_callback(unsigned char *  _header,
 int              _header_valid,
 unsigned char *  _payload,
@@ -160,6 +207,10 @@ is_accept=0;
 
   if( _header_valid && _payload_valid ) {
 
+    // CRC-valid frame from a peer: its end-of-frame NCO frequency is a
+    // reliable CFO measurement (see ofdm_rx_accumulate_xo_cfo).
+    if( _payload_len==6 || memcmp( &(ethhdr_charon->src_mac), ofdm0_mac, 6) != 0 )
+      ofdm_rx_accumulate_xo_cfo();
 
     if( _payload_len==6) {
       memcpy(rec_ack, _payload, 6);
@@ -361,24 +412,6 @@ void init_ofdm_rx(void) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Pending XO correction from last CW tone detection — applied after the
-// OFDM frame completes (or next TX) so the PLL re-lock doesn't disrupt
-// the current frame's IQ stream.
-static float pending_xo_cfo = 0.0f;
-static int   pending_xo_valid = 0;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////
-void ofdm_rx_apply_pending_xo(void) {
-  if (pending_xo_valid) {
-    pluto_apply_pss_xo_correction(pending_xo_cfo);
-    pending_xo_valid = 0;
-    pending_xo_cfo = 0.0f;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////
 void ofdm_rx_reset_nco(void) {
   if (_qq)
     nco_crcf_set_frequency(_qq->nco_rx, 0.0f);
@@ -386,17 +419,12 @@ void ofdm_rx_reset_nco(void) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Apply a CW-tone CFO estimate to the inner NCO and queue the XO correction.
+// Apply a CW-tone CFO estimate to the inner NCO.  The XO is tuned from
+// CRC-valid frames only (ofdm_rx_accumulate_xo_cfo), not from the CW tone.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 static void apply_cw_tone_detection(void) {
   float cfo = cw_tone_get_freq_offset();   // cycles/sample
   nco_crcf_set_frequency(_qq->nco_rx, 2.0f * (float)M_PI * cfo);
-  // Defer XO correction — applying it now would cause PLL re-lock
-  // and corrupt the OFDM frame that immediately follows the CW tone.
-  if (cfo != 0.0f) {
-    pending_xo_cfo = cfo;
-    pending_xo_valid = 1;
-  }
   fprintf(stderr, "\nCW_TONE: CFO=%.6f rad/samp (%.1f Hz, metric=%.3f)",
           2.0f * (float)M_PI * cfo,
           cfo * (float)sample_freq_hz,
