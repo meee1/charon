@@ -212,6 +212,9 @@ def run_sim(name, n_nodes, chan=(), node_env=None, traffic=None, duration=30,
         args = [os.path.join(BUILD, "charon_sim")] + list(node_args.get(i, []))
         if pluto_test:
             args.append("--pluto-test")
+            # traffic mode with no traffic: skips the ofdm0 TAP device,
+            # which read_config() would otherwise create (needs root)
+            env["CHARON_SIM_TRAFFIC"] = "0"
         else:
             pps, peers, length = traffic.get(i, (0, [], 200))
             env["CHARON_SIM_TRAFFIC"] = str(pps)
