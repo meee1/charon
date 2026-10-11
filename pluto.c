@@ -567,7 +567,36 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+// Reference-frequency correction.
+//
+// Primary: AD936x DCXO tuning (dcxo_tune_coarse 0..63, dcxo_tune_fine 0..8191).
+// This pulls the crystal itself, so the RF LOs and the BBPLL / sample clock
+// all move together (CFO and SFO both corrected) without reprogramming any
+// PLL dividers.  Only available when the AD936x drives a crystal; with an
+// external reference (stock PlutoSDR: TCXO into XTALN,
+// adi,xo-disable-use-ext-refclk-enable) the driver returns -ENODEV and we
+// fall back to xo_correction, which tells the driver the reference's true
+// frequency and recomputes the LO and BBPLL dividers.
+static int dcxo_available = 0;
+static long long dcxo_coarse;
+static long long dcxo_fine;
+static double dcxo_fine_accum;      // fractional fine-code remainder
+static double dcxo_gain_sign = 1.0;  // flipped by the divergence guard
+static double dcxo_gain_scale = 1.0; // raised by the overshoot guard
+
+#define DCXO_FINE_MAX   8191
+#define DCXO_COARSE_MAX 63
+
 void pluto_init_xo_correction(void) {
+  if (iio_device_attr_read_longlong(phy, "dcxo_tune_coarse", &dcxo_coarse) == 0 &&
+      iio_device_attr_read_longlong(phy, "dcxo_tune_fine", &dcxo_fine) == 0) {
+    dcxo_available = 1;
+    fprintf(stderr, "\n[pluto] DCXO tuning available: coarse=%lld fine=%lld, %.3f ppb/LSB",
+            dcxo_coarse, dcxo_fine, dcxo_ppb_per_lsb);
+  } else {
+    fprintf(stderr, "\n[pluto] DCXO tuning unavailable (external reference clock), using xo_correction");
+  }
+
   if (iio_device_attr_read_longlong(phy, "xo_correction", &current_xo_correction) == 0) {
     fprintf(stderr, "\n[pluto] initial xo_correction: %lld Hz", current_xo_correction);
   } else {
@@ -592,6 +621,98 @@ void pluto_set_xo_correction(long long xo_hz) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+void pluto_set_dcxo(long long coarse, long long fine) {
+  if (coarse != dcxo_coarse)
+    iio_device_attr_write_longlong(phy, "dcxo_tune_coarse", coarse);
+  if (fine != dcxo_fine)
+    iio_device_attr_write_longlong(phy, "dcxo_tune_fine", fine);
+  fprintf(stderr, "\n[pluto] set DCXO coarse=%lld fine=%lld (was %lld/%lld)",
+          coarse, fine, dcxo_coarse, dcxo_fine);
+  dcxo_coarse = coarse;
+  dcxo_fine = fine;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+// Shift the DCXO by delta_ppm (positive = raise frequency).
+//
+// The fine-tune gain (dcxo_ppb_per_lsb) and its sign depend on the crystal
+// and should be measured per board (see CLAUDE.md).  As a safety net, every
+// node runs the same code, so a wrong setting shows up in the CFO between
+// nodes after each correction:
+//  - wrong sign: CFO keeps growing with the same sign  -> flip the sign
+//  - gain set too high: CFO overshoots and reverses     -> halve step size
+// Each correction is capped so a wrong setting can't throw the CFO outside
+// the demodulator's capture range before the guard reacts.  Only CFOs well
+// above the estimator noise (DCXO_GUARD_MIN_PPM) count.
+#define DCXO_GUARD_MIN_PPM    0.1
+#define DCXO_GUARD_MARGIN_PPM 0.05
+#define DCXO_MAX_STEP_PPM     0.25
+
+static double dcxo_last_cfo_ppm = 0.0;
+
+static void pluto_adjust_dcxo(double delta_ppm) {
+  static int sign_strikes = 0;
+
+  double cfo_ppm = 2.0 * delta_ppm;   // caller applies half the measured CFO
+  if (dcxo_last_cfo_ppm != 0.0 && fabs(cfo_ppm) > DCXO_GUARD_MIN_PPM) {
+    int same_sign = (cfo_ppm > 0) == (dcxo_last_cfo_ppm > 0);
+
+    if (same_sign && fabs(cfo_ppm) > fabs(dcxo_last_cfo_ppm) + DCXO_GUARD_MARGIN_PPM)
+      sign_strikes++;
+    else
+      sign_strikes = 0;
+
+    if (sign_strikes >= 2) {
+      dcxo_gain_sign = -dcxo_gain_sign;
+      sign_strikes = 0;
+      fprintf(stderr, "\n[pluto] DCXO: CFO diverging (%.3f -> %.3f ppm), flipping tuning sign to %+.0f",
+              dcxo_last_cfo_ppm, cfo_ppm, dcxo_gain_sign);
+    }
+    if (!same_sign && fabs(cfo_ppm) > 0.5 * fabs(dcxo_last_cfo_ppm)) {
+      dcxo_gain_scale *= 2.0;
+      fprintf(stderr, "\n[pluto] DCXO: CFO overshot (%.3f -> %.3f ppm), halving step size (scale %.0f)",
+              dcxo_last_cfo_ppm, cfo_ppm, dcxo_gain_scale);
+    }
+  } else {
+    sign_strikes = 0;
+  }
+  dcxo_last_cfo_ppm = cfo_ppm;
+
+  if (delta_ppm >  DCXO_MAX_STEP_PPM) delta_ppm =  DCXO_MAX_STEP_PPM;
+  if (delta_ppm < -DCXO_MAX_STEP_PPM) delta_ppm = -DCXO_MAX_STEP_PPM;
+
+  dcxo_fine_accum += delta_ppm * 1000.0 / (dcxo_ppb_per_lsb * dcxo_gain_sign * dcxo_gain_scale);
+  long long step = (long long)dcxo_fine_accum;   // whole LSBs, remainder carried
+  if (step == 0)
+    return;
+  dcxo_fine_accum -= (double)step;
+
+  long long coarse = dcxo_coarse;
+  long long fine = dcxo_fine + step;
+
+  // Fine word ran off either end: step coarse in the same direction and
+  // re-centre fine.  The coarse step size depends on the crystal, so this
+  // jumps by an unknown amount; the loop pulls it back in afterwards.
+  if (fine < 0 || fine > DCXO_FINE_MAX) {
+    long long dir = (fine > DCXO_FINE_MAX) ? 1 : -1;
+    if (coarse + dir >= 0 && coarse + dir <= DCXO_COARSE_MAX) {
+      coarse += dir;
+      fine = DCXO_FINE_MAX / 2;
+      dcxo_fine_accum = 0.0;
+      dcxo_last_cfo_ppm = 0.0;   // the jump is not a divergence signal
+      fprintf(stderr, "\n[pluto] DCXO fine out of range, stepping coarse to %lld", coarse);
+    } else {
+      fine = (fine < 0) ? 0 : DCXO_FINE_MAX;
+      fprintf(stderr, "\n[pluto] DCXO at end of tuning range");
+    }
+  }
+
+  pluto_set_dcxo(coarse, fine);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
   static struct timeval last_correction_tv;
   static int has_last_correction = 0;
@@ -608,24 +729,34 @@ void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
 
   double cfo_hz = (double)cfo_cycles_per_sample * (double)sample_freq_hz;
 
-  // Reject obviously bogus CFO estimates (transient artifacts, noise)
-  if (fabs(cfo_hz) > 5000.0) {
-    fprintf(stderr, "\n[pluto] PSS XO correction: REJECTED CFO=%.1f Hz (exceeds 5 kHz limit)", cfo_hz);
+  // Reject obviously bogus CFO estimates.  Estimates come from CRC-valid
+  // frames only (ofdm_rx.c) and liquid's S0 CFO capture is about +/-22 kHz
+  // (pi/32 rad/sample at 1.4 MS/s), so anything beyond 20 kHz is suspect.
+  if (fabs(cfo_hz) > 20000.0) {
+    fprintf(stderr, "\n[pluto] XO correction: REJECTED CFO=%.1f Hz (exceeds 20 kHz limit)", cfo_hz);
     return;
   }
 
-  double xo_delta = cfo_hz * ((double)XO_BASE_HZ / (double)freq_rxtx_hz);
   // Apply half the correction: when two radios both measure and correct the
   // same CFO simultaneously, each shifting by half ensures the total
   // correction equals the full offset and they converge without oscillating.
-  long long new_xo = current_xo_correction - (long long)round(xo_delta * 0.5);
+  // Positive CFO means the peer is above us, so our reference must go up.
+  double cfo_ppm = cfo_hz * 1e6 / (double)freq_rxtx_hz;
 
-  fprintf(stderr, "\n[pluto] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
-          cfo_hz, xo_delta, new_xo, current_xo_correction);
-  // Estimates are averaged over several CRC-valid frames (ofdm_rx.c), so a
-  // small deadband is safe: 2 Hz at 40 MHz is 0.05 ppm.
-  if (llabs(new_xo - current_xo_correction) >= 2)
-    pluto_set_xo_correction(new_xo);
+  if (dcxo_available) {
+    fprintf(stderr, "\n[pluto] DCXO correction: CFO=%.1f Hz (%.4f ppm)", cfo_hz, cfo_ppm);
+    pluto_adjust_dcxo(cfo_ppm * 0.5);
+  } else {
+    double xo_delta = cfo_ppm * 1e-6 * (double)XO_BASE_HZ;
+    long long new_xo = current_xo_correction - (long long)round(xo_delta * 0.5);
+
+    fprintf(stderr, "\n[pluto] XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
+            cfo_hz, xo_delta, new_xo, current_xo_correction);
+    // Estimates are averaged over several CRC-valid frames (ofdm_rx.c), so a
+    // small deadband is safe: 2 Hz at 40 MHz is 0.05 ppm.
+    if (llabs(new_xo - current_xo_correction) >= 2)
+      pluto_set_xo_correction(new_xo);
+  }
   gettimeofday(&last_correction_tv, NULL);
   has_last_correction = 1;
 }

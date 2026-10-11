@@ -103,7 +103,8 @@ The tone is offset from DC to avoid carrier leakage in the AD9361 direct-convers
   - At f_tone=0.25, both `0.25*4=1` and `0.25*64=16` are integers, so the tone
     frequency vanishes from the phase estimate — the estimator outputs true CFO directly
 - **Detection threshold**: Normalized autocorrelation metric `|R|/(P/2)` >= 0.85
-- **Correction**: CW-tone CFO pre-sets the liquid-dsp NCO. The hardware XO (`pluto_apply_pss_xo_correction`) is tuned only from CRC-valid frames: the end-of-frame NCO CFO, averaged over 8 frames (`ofdm_rx_accumulate_xo_cfo`)
+- **Correction**: CW-tone CFO pre-sets the liquid-dsp NCO. The reference oscillator (`pluto_apply_pss_xo_correction`) is tuned only from CRC-valid frames: the end-of-frame NCO CFO, averaged over 8 frames (`ofdm_rx_accumulate_xo_cfo`). Each node applies half the measured CFO.
+- **Reference tuning**: AD936x DCXO (`dcxo_tune_coarse`/`dcxo_tune_fine`) when the chip drives a crystal, which moves LO and sample clock together. Stock PlutoSDR uses an external TCXO (`adi,xo-disable-use-ext-refclk-enable`), where the driver rejects DCXO writes with -ENODEV; Charon then falls back to `xo_correction`, which recomputes the LO and BBPLL dividers. The DCXO loop caps each step at 0.25 ppm, flips its sign if the CFO keeps growing, and halves its step size on overshoot
 - **Cost**: ~4 multiply-adds per sample
 - **Over-the-air frame**: `[CW tone 128 samples] [guard 16 zeros] [OFDM PLCP + data]`
 
@@ -238,6 +239,7 @@ All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-dev
 | `max_tcp_segs` | 2 | TCP window size limit (segments) |
 | `usb_batman_if` | 0 | Whether USB interface participates in batman-adv (0 = standard bridge mode) |
 | `max_tcp_share_backoff` | `symbol_delay_timeout * 12` | Max backoff for TCP connection sharing |
+| `dcxo_ppb_per_lsb` | 2.5 | DCXO fine-tune gain in ppb per `dcxo_tune_fine` LSB; sign = direction (positive: larger code raises frequency). Measure per board |
 | `ipaddr` | (from usb0) | Override mesh-bridge IP address |
 
 Set defaults on-device with: `sh /root/set_charon_env.sh`
@@ -262,6 +264,7 @@ Host USB <-> usb0 <-> mesh-bridge <-> bat0 (batman-adv) <-> ofdm0 (TAP) <-> Char
 - Good link: RSSI > -100 dBm, EVM < -20 dB, TCP ~117 Kbps (single hop)
 - Multi-hop: ~40% throughput reduction per hop
 - Frequency calibration is critical: measure with spectrum analyzer, adjust `ref_correction_ppm`
+- DCXO boards: measure `dcxo_ppb_per_lsb` once by transmitting a tone, stepping `dcxo_tune_fine` by e.g. +1000 (`iio_attr -d ad9361-phy dcxo_tune_fine <n>`), and dividing the carrier shift in ppb by 1000
 
 ## Regulatory
 
