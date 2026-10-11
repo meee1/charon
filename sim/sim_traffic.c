@@ -78,7 +78,7 @@ static uint32_t peer_ip[MAX_PEERS];
 static int      next_peer;
 static uint8_t  own_mac[6];
 static uint32_t own_ip;
-static uint32_t seq;
+static uint32_t seq[MAX_PEERS];   // per destination, so each receiver sees 0,1,2...
 static double   next_due_s;
 static unsigned int rng_state;
 
@@ -199,12 +199,14 @@ int sim_traffic_read(uint8_t *buf, int max_len, uint8_t *dst_mac, uint8_t *is_br
   const uint8_t *dmac;
   static const uint8_t bmac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
   uint32_t dip;
+  int pi = 0;
   if (bcast) {
     dmac = bmac;
     dip = 0xffffffffU;
   } else {
-    dmac = peer_mac[next_peer];
-    dip = peer_ip[next_peer];
+    pi = next_peer;
+    dmac = peer_mac[pi];
+    dip = peer_ip[pi];
     next_peer = (next_peer + 1) % npeers;
   }
 
@@ -231,11 +233,11 @@ int sim_traffic_read(uint8_t *buf, int max_len, uint8_t *dst_mac, uint8_t *is_br
   sim_payload_hdr h;
   uint8_t *pat = udp + UDP_HLEN_ + sizeof(h);
   int plen = payload_len - (int)sizeof(h);
-  for (int i = 0; i < plen; i++) pat[i] = (uint8_t)(seq * 7 + i * 13);
+  for (int i = 0; i < plen; i++) pat[i] = (uint8_t)(seq[pi] * 7 + i * 13);
   h.magic = SIM_MAGIC;
   h.node = node_id;
   h.len = plen;
-  h.seq = seq++;
+  h.seq = seq[pi]++;
   h.tx_us = (uint64_t)(now * 1e6);
   h.crc = crc32_bytes(pat, plen);
   memcpy(udp + UDP_HLEN_, &h, sizeof(h));

@@ -64,3 +64,4 @@ tests/ofdm_build/
 sim/build/
 sim/runs/
 __pycache__/
+sim/build-asan/
