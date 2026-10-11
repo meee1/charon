@@ -103,7 +103,7 @@ The tone is offset from DC to avoid carrier leakage in the AD9361 direct-convers
   - At f_tone=0.25, both `0.25*4=1` and `0.25*64=16` are integers, so the tone
     frequency vanishes from the phase estimate — the estimator outputs true CFO directly
 - **Detection threshold**: Normalized autocorrelation metric `|R|/(P/2)` >= 0.85
-- **Correction**: CFO applied to liquid-dsp NCO and hardware XO (`pluto_apply_pss_xo_correction`)
+- **Correction**: CW-tone CFO pre-sets the liquid-dsp NCO. The hardware XO (`pluto_apply_pss_xo_correction`) is tuned only from CRC-valid frames: the end-of-frame NCO CFO, averaged over 8 frames (`ofdm_rx_accumulate_xo_cfo`)
 - **Cost**: ~4 multiply-adds per sample
 - **Over-the-air frame**: `[CW tone 128 samples] [guard 16 zeros] [OFDM PLCP + data]`
 

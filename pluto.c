@@ -622,7 +622,9 @@ void pluto_apply_pss_xo_correction(float cfo_cycles_per_sample) {
 
   fprintf(stderr, "\n[pluto] PSS XO correction: CFO=%.1f Hz, xo_delta=%.1f Hz, new_xo=%lld Hz (was %lld)",
           cfo_hz, xo_delta, new_xo, current_xo_correction);
-  if (abs(new_xo - current_xo_correction) > 20)
+  // Estimates are averaged over several CRC-valid frames (ofdm_rx.c), so a
+  // small deadband is safe: 2 Hz at 40 MHz is 0.05 ppm.
+  if (llabs(new_xo - current_xo_correction) >= 2)
     pluto_set_xo_correction(new_xo);
   gettimeofday(&last_correction_tv, NULL);
   has_last_correction = 1;
