@@ -233,7 +233,8 @@ fi
 FAIL=0
 check() {  # name, command...
   local name=$1; shift
-  if "$@" > "$RUN/$(echo "$name" | tr ' /' '__').out" 2>&1; then
+  # file names: only [A-Za-z0-9_.-] (CI artifact upload rejects > ( etc.)
+  if "$@" > "$RUN/$(echo "$name" | tr -c 'A-Za-z0-9_.-' '_').out" 2>&1; then
     echo "  ok    $name"
   else
     echo "  FAIL  $name   (see $RUN)"; FAIL=1
@@ -241,7 +242,7 @@ check() {  # name, command...
 }
 last=$((N - 1))
 check "ping node0 -> node1" nx 0 ping -c 5 -i 0.5 -W 3 "$(ip_of 1)"
-check "ping node0 -> node$last" nx 0 ping -c 10 -i 0.5 -W 5 "$(ip_of $last)"
+[ "$last" -gt 1 ] && check "ping node0 -> node$last" nx 0 ping -c 10 -i 0.5 -W 5 "$(ip_of $last)"
 
 nx $last iperf3 -s -1 > "$RUN/iperf3_server.log" 2>&1 &
 PIDS+=($!)
@@ -258,6 +259,19 @@ rate=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('%.1f'
 [ -n "$rate" ] && echo "  iperf3 throughput: $rate kbit/s (received)"
 kill "${PIDS[0]}" 2>/dev/null; sleep 0.5
 grep -h "overruns" "$RUN/rfchan.log" 2>/dev/null
+
+# On failure, dump per-node network state and log tails (for CI logs)
+if [ "$FAIL" != 0 ]; then
+  for i in $(seq 0 $((N - 1))); do
+    echo "--- node$i: addr / route / neigh"
+    nx $i ip -br addr 2>&1 | sed 's/^/    /'
+    nx $i ip route 2>&1 | sed 's/^/    /'
+    nx $i ip neigh 2>&1 | sed 's/^/    /'
+    echo "--- node$i: log tail"
+    tr '\r' '\n' < "$RUN/node$i.log" | grep -av 'samples/sec\|noise_floor\|^$' | tail -15 | sed 's/^/    /'
+  done
+  echo "--- rfchan"; sed 's/^/    /' "$RUN/rfchan.log"
+fi
 
 if [ "$KEEP" = 1 ]; then
   echo "namespaces kept; press enter to tear down"; read -r _
