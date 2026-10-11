@@ -54,7 +54,7 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-BUILD=$HERE/build
+BUILD=${CHARON_SIM_BUILD:-$HERE/build}   # override e.g. for an ASan build
 TOPO=line
 N=3
 BATMAN=auto
@@ -257,8 +257,6 @@ check "iperf3 TCP node0 -> node$last (${DURATION}s)" iperf_client
 rate=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('%.1f' % (d['end']['sum_received']['bits_per_second']/1e3))" \
   "$RUN/iperf3.json" 2>/dev/null)
 [ -n "$rate" ] && echo "  iperf3 throughput: $rate kbit/s (received)"
-kill "${PIDS[0]}" 2>/dev/null; sleep 0.5
-grep -h "overruns" "$RUN/rfchan.log" 2>/dev/null
 
 # On failure, dump per-node network state and log tails (for CI logs)
 if [ "$FAIL" != 0 ]; then
@@ -284,5 +282,7 @@ fi
 if [ "$KEEP" = 1 ]; then
   echo "namespaces kept; press enter to tear down"; read -r _
 fi
+kill "${PIDS[0]}" 2>/dev/null; sleep 0.5     # rfchan last, so --keep leaves a live channel
+grep -h "overruns" "$RUN/rfchan.log" 2>/dev/null
 [ "$FAIL" = 0 ] && echo "PASS" || echo "FAIL"
 exit $FAIL
