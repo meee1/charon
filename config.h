@@ -15,6 +15,8 @@ extern int max_long_retrans;
 extern int max_short_retrans;
 extern int bat_ogm_interval;
 extern int enable_charon;
+extern int cpu_mask;
+extern int no_batman;
 extern double dcxo_ppb_per_lsb;
 extern double ref_correction_ppm;
 extern char usb_ip[16];

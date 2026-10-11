@@ -58,3 +58,9 @@ tests/test_cw_tone
 tests/test_cw_tone_channel
 tests/test_cw_cfo_detection
 charon
+tests/test_channel_model
+tests/test_ofdm
+tests/ofdm_build/
+sim/build/
+sim/runs/
+__pycache__/
