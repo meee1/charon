@@ -42,6 +42,10 @@
 
 #include "ethernet.h"
 
+#ifdef CHARON_SIM
+#include "sim/sim_traffic.h"
+#endif
+
 static struct device *dev;
 static int debug_tap=1;
 
@@ -53,12 +57,46 @@ static uint8_t tap_mac_a[18];
 
 /////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
+// Derive the ofdm0 MAC ("xx:xx:xx:xx:xx:xx") from a node IP.
+void tap_mac_from_ip(uint32_t ip32, char *mac_a) {
+  srandom(ip32);  //always the same mac for a given IP. keeps the mesh from getting behind too much when a 
+                  //client comes back up after re-start.
+  sprintf(mac_a, "%02x:%02x:%02x:%02x:%02x:%02x",
+      (uint8_t) ((random()%255)&0xfc),
+      (uint8_t) (random()%255),
+      (uint8_t) (random()%255),
+      (uint8_t) (random()%255),
+      (uint8_t) (random()%255),
+    (uint8_t) (random()%255 ));
+  srandom(time(NULL));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+static void parse_mac(const char *mac_a, uint8_t *mac) {
+  unsigned int m[6];
+  sscanf(mac_a, "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]);
+  for(int i = 0; i < 6; i++) mac[i] = (uint8_t)m[i];
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 int init_tap_device(void) {
 	int ret;
 	char *hwaddr;
 
 	ret = 0;
   fprintf(stderr, "\ntuntap init");
+
+#ifdef CHARON_SIM
+  // Simulator traffic mode: no TAP device, frames come from sim_traffic.c
+  if(sim_traffic_enabled()) {
+    tap_mac_from_ip(usb_ip32, tap_mac_a);
+    parse_mac(tap_mac_a, ofdm0_mac);
+    sim_traffic_init(ofdm0_mac, usb_ip32);
+    return 0;
+  }
+#endif
 
   dev = tuntap_init();
 
@@ -78,16 +116,7 @@ int init_tap_device(void) {
 
 
 
-  srandom(usb_ip32);  //always the same mac for a given IP. keeps the mesh from getting behind too much when a 
-                      //client comes back up after re-start.
-  sprintf(tap_mac_a, "%02x:%02x:%02x:%02x:%02x:%02x",
-      (uint8_t) ((random()%255)&0xfc),
-      (uint8_t) (random()%255),
-      (uint8_t) (random()%255),
-      (uint8_t) (random()%255),
-      (uint8_t) (random()%255),
-    (uint8_t) (random()%255 ));
-  srandom(time(NULL));
+  tap_mac_from_ip(usb_ip32, tap_mac_a);
 
 	if (tuntap_set_hwaddr(dev, tap_mac_a) == -1) {
 		ret = 1;
@@ -105,18 +134,7 @@ int init_tap_device(void) {
 		goto clean;
 	}
 
-  tap_mac_a[2] = 0;
-  tap_mac_a[5] = 0;
-  tap_mac_a[8] = 0;
-  tap_mac_a[11] = 0;
-  tap_mac_a[14] = 0;
-  tap_mac_a[17] = 0;
-  ofdm0_mac[0] = strtol(&tap_mac_a[0],NULL,16);
-  ofdm0_mac[1] = strtol(&tap_mac_a[3],NULL,16);
-  ofdm0_mac[2] = strtol(&tap_mac_a[6],NULL,16);
-  ofdm0_mac[3] = strtol(&tap_mac_a[9],NULL,16);
-  ofdm0_mac[4] = strtol(&tap_mac_a[12],NULL,16);
-  ofdm0_mac[5] = strtol(&tap_mac_a[15],NULL,16);
+  parse_mac(tap_mac_a, ofdm0_mac);
 
   setNonblocking(dev->tun_fd);
 
@@ -158,6 +176,11 @@ int read_tap_dev(char *buffer, int max_len, char *dst_mac, char *is_broadcast) {
   batman_unicast *bathdr_u = &(batucast->bathdr_unicast);
 
  eth_hdr *ethhdr = (eth_hdr *) &(ethframe->ethhdr);
+
+#ifdef CHARON_SIM
+ if(sim_traffic_enabled())
+   return sim_traffic_read((uint8_t *)buffer, max_len, (uint8_t *)dst_mac, (uint8_t *)is_broadcast);
+#endif
 
  nbytes = read(dev->tun_fd, buffer, max_len);
 
@@ -242,6 +265,10 @@ int write_tap_dev(char *buffer, int len) {
 
  if(len<=0) return 0;
 
+#ifdef CHARON_SIM
+ if(sim_traffic_enabled())
+   return sim_traffic_write((const uint8_t *)buffer, len);
+#endif
 
   uint16_t frame_type  = htons(ethhdr->eth_type);
   switch( frame_type ) {

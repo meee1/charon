@@ -42,6 +42,8 @@
 #define DEFAULT_BCAST_RETRANS 1
 #define DEFAULT_USB_BATMAN_IF 0
 #define DEFAULT_DCXO_PPB_PER_LSB 2.5
+#define DEFAULT_NO_BATMAN 0
+#define DEFAULT_CPU_MASK 2
 #define DEFAULT_ACK_DELAY_TIMEOUT 25000 
 #define DEFAULT_SYMBOL_DELAY ((OFDM_M+CP_LEN+TAPER_LEN)*2)
 #define DEFAULT_MAX_TCP_SHARE_BACKOFF (DEFAULT_SYMBOL_DELAY*12); 
@@ -57,6 +59,8 @@ static char cmd_str[128];
 //define with fw_set_attr.  these values will be set/reset in init
 double ref_correction_ppm;
 double dcxo_ppb_per_lsb;
+int no_batman;
+int cpu_mask;
 int enable_charon;
 int bat_ogm_interval;
 int max_short_retrans;
@@ -200,6 +204,27 @@ void read_config() {
     fprintf(stderr, "\ncould not find max_tcp_segs in u-boot env.  setting to default of %d", max_tcp_segs);
   }
 
+  //no_batman=1: don't use batman-adv.  ofdm0 is brought up as a plain L2
+  //link and addressing/routing is left to the host (simulator use).
+  memset(cmd_str, 0x00, sizeof(cmd_str));
+  if( read_fw_attr_value("no_batman", cmd_str, 128) == 0) {  
+    no_batman = (int) atoi(cmd_str);
+    fprintf(stderr, "\nsetting no_batman to %d", no_batman);
+  }
+  else {
+    no_batman = DEFAULT_NO_BATMAN; 
+  }
+
+  //cpu_mask: taskset mask charon pins itself to (0 = don't pin)
+  memset(cmd_str, 0x00, sizeof(cmd_str));
+  if( read_fw_attr_value("cpu_mask", cmd_str, 128) == 0) {  
+    cpu_mask = (int) strtol(cmd_str, NULL, 0);
+    fprintf(stderr, "\nsetting cpu_mask to 0x%x", cpu_mask);
+  }
+  else {
+    cpu_mask = DEFAULT_CPU_MASK; 
+  }
+
   //AD936x DCXO fine-tune gain (ppb per dcxo_tune_fine LSB).  Sign gives the
   //direction: positive means a larger code raises the frequency.
   memset(cmd_str, 0x00, sizeof(cmd_str));
@@ -287,7 +312,10 @@ void read_config() {
   //this option allows for non-batman aware clients to use the mesh network.  it has the advantage of less OGM traffic, but
   //has the disadvantage that the client will have to wait to discover other nodes in the network via ARP after the local ARP tables
   //expire.
-  if(usb_batman_if==0) {
+  if(no_batman) {
+      system("/sbin/ip link set dev ofdm0 mtu 2342 up");
+  }
+  else if(usb_batman_if==0) {
 
       system("/sbin/ip link set down dev ofdm0");
       system("/sbin/ip link set down dev usb0");
@@ -350,10 +378,14 @@ void read_config() {
       sleep(1);
   }
 
-  sprintf(cmd_str, "/usr/sbin/batctl it %d", bat_ogm_interval);
-  system(cmd_str); //originator frame interval in ms 
+  if(!no_batman) {
+    sprintf(cmd_str, "/usr/sbin/batctl it %d", bat_ogm_interval);
+    system(cmd_str); //originator frame interval in ms 
+  }
 
-  fprintf(stderr,"\ngiving charon a cpu core to itself.");
-  sprintf( cmd_str, "/usr/bin/taskset -p 02 %d", getpid());   //give charon a cpu core to itself
-  system(cmd_str);
+  if(cpu_mask) {
+    fprintf(stderr,"\ngiving charon a cpu core to itself.");
+    sprintf( cmd_str, "/usr/bin/taskset -p %x %d", cpu_mask, getpid());   //give charon a cpu core to itself
+    system(cmd_str);
+  }
 }

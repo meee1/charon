@@ -36,6 +36,7 @@
 
 #include "util.h"
 #include "timers.h"
+#include "config.h"
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -89,6 +90,14 @@ struct in_addr addr;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
+static FILE *popen_env_file(const char *path) {
+  char cmd[512];
+  snprintf(cmd, sizeof(cmd), "cat '%s'", path);
+  return popen(cmd, "r");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 int read_fw_attr_value(const char*config_key, char *value, int max_len){
 
 FILE * fp;
@@ -96,8 +105,13 @@ char line[1024];
 char *ptr;
 char *tok1;
 
+  // CHARON_ENV_FILE (simulator / host runs): read key=value lines from a
+  // file instead of the u-boot environment.  Same line format as
+  // fw_printenv output.
+  const char *env_file = getenv("CHARON_ENV_FILE");
+
   memset(line,0x00,sizeof(line));
-  if((fp = popen("/usr/sbin/fw_printenv","r")) != NULL){
+  if((fp = env_file ? popen_env_file(env_file) : popen("/usr/sbin/fw_printenv","r")) != NULL){
     while(fgets(line,sizeof(line),fp)!=NULL){
       if(line[0]=='\n' || line[0]=='\r' || line[0]==' ') {
         memset(line,0x00,sizeof(line));
@@ -249,6 +263,16 @@ if(fp!=NULL) fclose(fp);
 ////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
 int is_batman_route(const char*org_dest_mac_a, uint8_t *dst_route){
+
+  // no_batman: ofdm0 is used as a plain L2 link (simulator, or a host doing
+  // its own routing).  The next hop is the destination MAC itself.
+  if(no_batman) {
+    unsigned int m[6];
+    if(sscanf(org_dest_mac_a, "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6)
+      return 0;
+    for(int i = 0; i < 6; i++) dst_route[i] = (uint8_t)m[i];
+    return 1;
+  }
 
   if(route_cache_timer == NULL) {
     route_cache_timer = create_timer();
