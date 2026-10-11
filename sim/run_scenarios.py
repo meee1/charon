@@ -115,6 +115,10 @@ class Run:
         m = re.search(r"(\d+) overruns", self.rfchan_log)
         return int(m.group(1)) if m else -1
 
+    def max_lag_ms(self):
+        m = re.search(r"max lag ([\d.]+) ms", self.rfchan_log)
+        return float(m.group(1)) if m else None
+
     def cfo_series(self, a, b):
         return [(d["t"], d["cfo_hz"]) for d in self.gt_links.get((a, b), [])]
 
@@ -267,8 +271,8 @@ class Result:
     def add_run(self, r):
         self.runs.append(r)
         ov = r.overruns()
-        self.check("rfchan real-time (%s)" % os.path.basename(r.path), ov == 0,
-                   "%d overruns" % ov)
+        self.check("rfchan real-time (%s)" % os.path.relpath(r.path, RUNS), ov == 0,
+                   "%d overruns, max lag %s ms" % (ov, fmt(r.max_lag_ms())))
 
     @property
     def ok(self):
