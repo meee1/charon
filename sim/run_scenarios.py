@@ -446,6 +446,54 @@ def drift(res):
     res.check("|CFO| stays < 200 Hz after pull-in", s and max(s) < 200, "max %s Hz" % fmt(max(s) if s else None))
 
 
+def mean_ppm(r, nodes, t_from=None):
+    """Mean effective ppm over nodes at each logged time."""
+    series = {}
+    for i in nodes:
+        for d in r.gt_nodes.get(i, []):
+            series.setdefault(d["t"], []).append(d["eff_ppm"])
+    return sorted((t, sum(v) / len(v)) for t, v in series.items() if len(v) == len(nodes))
+
+
+@scenario()
+def mesh4_consensus(res):
+    """4-node mesh, offsets 0/+3/-2/+5 ppm: pairwise CFO converges, mean doesn't walk."""
+    r = run_sim("mesh4_consensus", 4, ["link.*.loss_db=70", "node.1.ppm=3", "node.2.ppm=-2", "node.3.ppm=5"],
+                traffic={i: (3, [j for j in range(4) if j != i], 200) for i in range(4)}, duration=90)
+    res.add_run(r)
+    worst = max(r.final_abs_cfo(a, b) or 1e9 for a in range(4) for b in range(4) if a != b)
+    m = mean_ppm(r, range(4))
+    walk = max(v for _, v in m[10:]) - min(v for _, v in m[10:]) if len(m) > 12 else None
+    flips = sum(r.count(i, r"flipping tuning sign") for i in range(4))
+    res.metric("worst_pair_abs_cfo_hz", worst)
+    res.metric("mean_ppm_walk_after_10s", walk)
+    res.metric("sign_flips", flips)
+    res.metric("delivery", [r.delivery(None, i) for i in range(4)])
+    res.check("all pairs |CFO| < 150 Hz at end", worst < 150, "worst %.0f Hz" % worst)
+    res.check("mesh mean frequency stable (< 0.3 ppm walk)", walk is not None and walk < 0.3,
+              "walk %s ppm (start mean 1.5)" % fmt(walk, "%.2f"))
+    res.check("no spurious DCXO sign flips", flips == 0, "%d flips" % flips)
+    res.check("delivery >= 90% at every node", min(r.delivery(None, i) for i in range(4)) >= 0.90,
+              " ".join("%.0f%%" % (100 * r.delivery(None, i)) for i in range(4)))
+
+
+@scenario()
+def long_drift(res):
+    """4 minutes, XO drift 0.02 ppm/sqrt(s), bidirectional: loop stays stable."""
+    r = run_sim("long_drift", 2, ["link.0-1.loss_db=72", "node.1.ppm=2", "node.*.drift_ppm_per_rts=0.02", "seed=3"],
+                traffic={0: (15, [1], 600), 1: (15, [0], 300)}, duration=240)
+    res.add_run(r)
+    s = [abs(c) for t, c in r.cfo_series(0, 1) if t > 30]
+    flips = r.count(0, r"flipping tuning sign") + r.count(1, r"flipping tuning sign")
+    res.metric("max_abs_cfo_after_30s", max(s) if s else None)
+    res.metric("sign_flips", flips)
+    res.metric("delivery", [r.delivery(0, 1), r.delivery(1, 0)])
+    res.check("no spurious DCXO sign flips", flips == 0, "%d flips" % flips)
+    res.check("|CFO| < 250 Hz after pull-in", s and max(s) < 250, "max %s Hz" % fmt(max(s) if s else None))
+    res.check("delivery >= 95% both ways", min(r.delivery(0, 1), r.delivery(1, 0)) >= 0.95,
+              "%.1f%% / %.1f%%" % (100 * r.delivery(0, 1), 100 * r.delivery(1, 0)))
+
+
 @scenario()
 def cfo_tolerance(res):
     """Raw PHY CFO/SFO tolerance with corrections disabled in the channel."""

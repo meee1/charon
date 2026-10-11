@@ -643,39 +643,60 @@ void pluto_set_dcxo(long long coarse, long long fine) {
 //  - wrong sign: CFO keeps growing with the same sign  -> flip the sign
 //  - gain set too high: CFO overshoots and reverses     -> halve step size
 // Each correction is capped so a wrong setting can't throw the CFO outside
-// the demodulator's capture range before the guard reacts.  Only CFOs well
-// above the estimator noise (DCXO_GUARD_MIN_PPM) count.
-#define DCXO_GUARD_MIN_PPM    0.1
-#define DCXO_GUARD_MARGIN_PPM 0.05
-#define DCXO_MAX_STEP_PPM     0.25
+// the demodulator's capture range before the guard reacts.
+//
+// The guard only looks at CFOs well above what normal tracking produces
+// (estimator noise, XO drift and the peer's own corrections move the CFO by
+// a few hundredths of a ppm between corrections; steady-state error is
+// ~0.1 ppm).  Below DCXO_GUARD_MIN_PPM it does nothing -- with a lower bar,
+// ordinary drift looked like divergence and flipped a correct sign, sending
+// the node off at the 0.25 ppm/correction cap (seen in a long simulator run).
+#define DCXO_GUARD_MIN_PPM        0.3
+#define DCXO_GUARD_MARGIN_PPM     0.05   // growth must exceed max(this, 10% of |CFO|)
+#define DCXO_GUARD_SIGN_STRIKES   3
+#define DCXO_SCALE_RECOVER        10     // clean corrections before undoing a halving
+#define DCXO_MAX_STEP_PPM         0.25
 
 static double dcxo_last_cfo_ppm = 0.0;
 
 static void pluto_adjust_dcxo(double delta_ppm) {
   static int sign_strikes = 0;
+  static int clean_steps = 0;
 
   double cfo_ppm = 2.0 * delta_ppm;   // caller applies half the measured CFO
+  int overshoot = 0;
   if (dcxo_last_cfo_ppm != 0.0 && fabs(cfo_ppm) > DCXO_GUARD_MIN_PPM) {
     int same_sign = (cfo_ppm > 0) == (dcxo_last_cfo_ppm > 0);
+    double margin = fabs(dcxo_last_cfo_ppm) * 0.1;
+    if (margin < DCXO_GUARD_MARGIN_PPM) margin = DCXO_GUARD_MARGIN_PPM;
 
-    if (same_sign && fabs(cfo_ppm) > fabs(dcxo_last_cfo_ppm) + DCXO_GUARD_MARGIN_PPM)
+    if (same_sign && fabs(cfo_ppm) > fabs(dcxo_last_cfo_ppm) + margin)
       sign_strikes++;
     else
       sign_strikes = 0;
 
-    if (sign_strikes >= 2) {
+    if (sign_strikes >= DCXO_GUARD_SIGN_STRIKES) {
       dcxo_gain_sign = -dcxo_gain_sign;
       sign_strikes = 0;
       fprintf(stderr, "\n[pluto] DCXO: CFO diverging (%.3f -> %.3f ppm), flipping tuning sign to %+.0f",
               dcxo_last_cfo_ppm, cfo_ppm, dcxo_gain_sign);
     }
     if (!same_sign && fabs(cfo_ppm) > 0.5 * fabs(dcxo_last_cfo_ppm)) {
+      overshoot = 1;
       dcxo_gain_scale *= 2.0;
       fprintf(stderr, "\n[pluto] DCXO: CFO overshot (%.3f -> %.3f ppm), halving step size (scale %.0f)",
               dcxo_last_cfo_ppm, cfo_ppm, dcxo_gain_scale);
     }
   } else {
     sign_strikes = 0;
+  }
+  // A halving is undone gradually after a run of clean corrections, so one
+  // noisy reversal doesn't slow the loop down for good.
+  if (overshoot) {
+    clean_steps = 0;
+  } else if (dcxo_gain_scale > 1.0 && ++clean_steps >= DCXO_SCALE_RECOVER) {
+    dcxo_gain_scale /= 2.0;
+    clean_steps = 0;
   }
   dcxo_last_cfo_ppm = cfo_ppm;
 
