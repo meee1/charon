@@ -118,10 +118,17 @@ char *tok1;
         continue;
       }
 
-      if( strncmp(config_key, &line[0], strlen(config_key))==0 ) {
+      //exact key match: "ipaddr" must not match "ipaddr_host=..."
+      if( strncmp(config_key, &line[0], strlen(config_key))==0 &&
+          (line[strlen(config_key)]=='=' || line[strlen(config_key)]==' ') ) {
         ptr = &line[strlen(config_key)];
         tok1 = strtok(ptr, " =\r\n");
-        memcpy(value, tok1, max_len-1);
+        if(tok1 == NULL) {  //"key=" with no value: use the default
+          fprintf(stderr, "\nfound %s key with empty value, ignoring", config_key);
+          pclose(fp);
+          return -1;
+        }
+        snprintf(value, max_len, "%s", tok1);
 
         fprintf(stderr, "\nfound %s key:  value:->%s<-", config_key, value);
 

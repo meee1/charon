@@ -171,17 +171,17 @@ static void test_dup_clear(void)
 
 static void test_dup_zero_pid_behavior(void)
 {
-    TEST_BEGIN("dup: PID 0 interaction with early-exit optimization");
+    TEST_BEGIN("dup: PID 0 is never a duplicate (0 marks empty slots)");
     clear_duplicates();
-    // The is_dup() function early-exits when it hits a zero entry.
-    // After clear, all entries are 0. Adding a nonzero PID then checking
-    // for it should work because is_dup searches backwards from dup_idx.
+    // is_dup() stops at the first empty (zero) slot.  PID 0 must not match
+    // those slots, and adding it must not cut the history short.
+    TEST_ASSERT(is_dup(0) == 0);
     add_dup(0x999);
     TEST_ASSERT(is_dup(0x999) == 1);
-    // PID 0 should not be found as a duplicate after clear+add since
-    // the zero entries are the sentinel, not real duplicates.
-    // (Note: PID 0 would be detected as dup due to the zero sentinel.
-    //  This is a known limitation of the implementation.)
+    TEST_ASSERT(is_dup(0) == 0);
+    add_dup(0);
+    TEST_ASSERT(is_dup(0) == 0);
+    TEST_ASSERT(is_dup(0x999) == 1);
     TEST_PASS();
 }
 
