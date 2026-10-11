@@ -640,7 +640,8 @@ void pluto_set_dcxo(long long coarse, long long fine) {
 // and should be measured per board (see CLAUDE.md).  As a safety net, every
 // node runs the same code, so a wrong setting shows up in the CFO between
 // nodes after each correction:
-//  - wrong sign: CFO keeps growing with the same sign  -> flip the sign
+//  - wrong sign: CFO keeps growing, or stops shrinking, with the same sign
+//                                                        -> flip the sign
 //  - gain set too high: CFO overshoots and reverses     -> halve step size
 // Each correction is capped so a wrong setting can't throw the CFO outside
 // the demodulator's capture range before the guard reacts.
@@ -652,8 +653,9 @@ void pluto_set_dcxo(long long coarse, long long fine) {
 // ordinary drift looked like divergence and flipped a correct sign, sending
 // the node off at the 0.25 ppm/correction cap (seen in a long simulator run).
 #define DCXO_GUARD_MIN_PPM        0.3
-#define DCXO_GUARD_MARGIN_PPM     0.05   // growth must exceed max(this, 10% of |CFO|)
-#define DCXO_GUARD_SIGN_STRIKES   3
+#define DCXO_GUARD_SHRINK_PPM     0.05   // must shrink by at least this per correction
+#define DCXO_GUARD_PATIENCE_MIN   3      // strikes before a flip: random in [3,6]
+#define DCXO_GUARD_PATIENCE_SPAN  4
 #define DCXO_SCALE_RECOVER        10     // clean corrections before undoing a halving
 #define DCXO_MAX_STEP_PPM         0.25
 
@@ -662,20 +664,29 @@ static double dcxo_last_cfo_ppm = 0.0;
 static void pluto_adjust_dcxo(double delta_ppm) {
   static int sign_strikes = 0;
   static int clean_steps = 0;
+  static int patience = 0;
 
   double cfo_ppm = 2.0 * delta_ppm;   // caller applies half the measured CFO
   int overshoot = 0;
   if (dcxo_last_cfo_ppm != 0.0 && fabs(cfo_ppm) > DCXO_GUARD_MIN_PPM) {
     int same_sign = (cfo_ppm > 0) == (dcxo_last_cfo_ppm > 0);
-    double margin = fabs(dcxo_last_cfo_ppm) * 0.1;
-    if (margin < DCXO_GUARD_MARGIN_PPM) margin = DCXO_GUARD_MARGIN_PPM;
 
-    if (same_sign && fabs(cfo_ppm) > fabs(dcxo_last_cfo_ppm) + margin)
+    // A strike is a correction after which the CFO didn't shrink.  Growing
+    // means our sign is wrong.  Standing still means exactly one of the two
+    // nodes is wrong and their corrections cancel -- a stable state that a
+    // growth-only test never leaves.  Patience is random per decision so
+    // the two nodes don't flip in lockstep (which would just swap which
+    // one is wrong); whoever flips first fixes it if it was the wrong one,
+    // and if it wasn't, the CFO then grows and both flip.
+    if (patience == 0)
+      patience = DCXO_GUARD_PATIENCE_MIN + (int)(random() % DCXO_GUARD_PATIENCE_SPAN);
+    if (same_sign && fabs(cfo_ppm) > fabs(dcxo_last_cfo_ppm) - DCXO_GUARD_SHRINK_PPM)
       sign_strikes++;
     else
       sign_strikes = 0;
 
-    if (sign_strikes >= DCXO_GUARD_SIGN_STRIKES) {
+    if (sign_strikes >= patience) {
+      patience = 0;
       dcxo_gain_sign = -dcxo_gain_sign;
       sign_strikes = 0;
       fprintf(stderr, "\n[pluto] DCXO: CFO diverging (%.3f -> %.3f ppm), flipping tuning sign to %+.0f",
