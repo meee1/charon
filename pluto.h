@@ -27,6 +27,8 @@ long long pluto_get_in_gain(void);
 void pluto_set_out_gain(long long gain);
 void pluto_set_filter();
 void pluto_enable_fir(int enable);
+void pluto_run_dc_quad_calibration(void);
+void pluto_enable_dc_quad_tracking(void);
 struct iio_context *pluto_init_txrx();
 extern long long current_sample_freq;
 extern long long current_rx_freq;
