@@ -137,6 +137,59 @@ static void pluto_log_filter_chain(struct iio_device *phydev) {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
+// Enable the AD9361's continuous RX correction loops:
+//  - rf_dc_offset_tracking_en: RF DC offset tracking (LO leakage / self-mixing)
+//  - bb_dc_offset_tracking_en: baseband DC offset tracking
+//  - quadrature_tracking_en:   RX IQ gain/phase imbalance tracking
+// These are shared-by-type attrs on the phy "voltage0" input channel
+// (sysfs in_voltage_*_tracking_en).  DC at baseband lands on the CFO
+// estimator and the OFDM null subcarrier; IQ imbalance creates an image
+// that sits on mirror subcarriers and raises EVM.
+void pluto_enable_dc_quad_tracking(void) {
+  static const char *attrs[] = {
+    "rf_dc_offset_tracking_en",
+    "bb_dc_offset_tracking_en",
+    "quadrature_tracking_en",
+  };
+
+  for (unsigned int i = 0; i < sizeof(attrs) / sizeof(attrs[0]); i++) {
+    int ret = iio_channel_attr_write_bool(phy_voltage0_in, attrs[i], true);
+    bool en = false;
+    iio_channel_attr_read_bool(phy_voltage0_in, attrs[i], &en);
+    if (ret < 0)
+      fprintf(stderr, "\n[pluto] ERROR: enabling %s failed: %d", attrs[i], ret);
+    fprintf(stderr, "\n[pluto] %s=%d", attrs[i], (int)en);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+// Run one-shot TX quadrature (IQ imbalance + TX LO leakage) and RF DC offset
+// calibrations.  Must be called with the RX/TX LOs at the operating
+// frequency: the driver only re-runs these automatically on LO moves
+// >100 MHz, and the TX LO is parked at 5.999 GHz before the operating
+// frequency is first set.
+void pluto_run_dc_quad_calibration(void) {
+  int ret;
+
+  fprintf(stderr, "\n[pluto] running TX quadrature calibration...");
+  ret = iio_device_attr_write(phy, "calib_mode", "tx_quad");
+  if (ret < 0)
+    fprintf(stderr, "\n[pluto] ERROR: tx_quad calibration failed: %d", ret);
+
+  fprintf(stderr, "\n[pluto] running RF DC offset calibration...");
+  ret = iio_device_attr_write(phy, "calib_mode", "rf_dc_offs");
+  if (ret < 0)
+    fprintf(stderr, "\n[pluto] ERROR: rf_dc_offs calibration failed: %d", ret);
+
+  // keep the driver re-calibrating on large LO changes
+  iio_device_attr_write(phy, "calib_mode", "auto");
+
+  pluto_enable_dc_quad_tracking();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
 struct iio_context * pluto_init_txrx() {
 
     fprintf(stderr, "\n[pluto] creating local IIO context...");
@@ -199,6 +252,8 @@ struct iio_context * pluto_init_txrx() {
     pluto_log_filter_chain(phy);
 
     pluto_init_xo_correction();
+
+    pluto_enable_dc_quad_tracking();
 
     fprintf(stderr, "\n[pluto] setting initial TX gain to -80 dB");
     pluto_set_out_gain( -80 );
@@ -504,6 +559,9 @@ void pluto_set_rx_freq(long long freq_rx_hz) {
     pluto_set_tx_freq(5999000000);
     pluto_set_out_gain( -80 );
   }
+
+  // LOs are now at the operating frequency; calibrate DC / IQ there.
+  pluto_run_dc_quad_calibration();
 
 }
 
