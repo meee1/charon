@@ -22,6 +22,28 @@ jobs:
         cd tests
         make check
 
+  rf-sim:
+    needs: unit-tests
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install simulator dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libliquid-dev libfftw3-dev libzmq3-dev libiio-dev libad9361-dev iperf3
+    - name: Build simulator
+      run: make -C sim -j4
+    - name: RF channel scenarios (quick set)
+      run: python3 sim/run_scenarios.py --quick -j2
+    - name: Full-stack netns run (3-node line, ping + iperf3)
+      run: sudo sim/netns_run.sh --topology line --nodes 3 --duration 10
+    - name: Upload simulator logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rf-sim-runs
+        path: sim/runs/
+
   build1:
     needs: unit-tests
     runs-on: ubuntu-24.04

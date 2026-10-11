@@ -76,6 +76,15 @@ tests/            Unit test suite (CRC, TCP, timers, CW tone, channel simulation
   test_cw_tone.c  CW tone generation and detection tests
   test_cw_tone_channel.c  CW tone under channel impairments (CFO, noise, multipath)
 
+sim/              RF channel simulator (host build, see sim/README.md)
+  rfchan.c        Real-time channel broker: per-link loss/multipath/SFO/CFO,
+                  collisions, noise, AGC, DC/IQ, 12-bit ADC, ground-truth log
+  iio_zmq.c       Fake libiio/libad9361 so pluto.c runs unmodified over ZMQ
+  channel_model.c Impairment DSP blocks (unit-tested in tests/test_channel_model.c)
+  sim_traffic.c   Traffic generator/checker replacing the TAP device (CHARON_SIM only)
+  run_scenarios.py  Scenario suite (impairments, CFO/DCXO loop, MAC, pluto-test)
+  netns_run.sh    Full stack in network namespaces: TAP, routing, ping, iperf3
+
 deploy.sh         Script to deploy charon binary to PlutoSDR via SSH
 build_pluto_image/              Helper scripts/configs for PlutoSDR firmware builds
 changes_to_plutosdr_fw_configs_rel_to_v28/  Diffs of config changes vs firmware v0.28
@@ -97,7 +106,10 @@ A single CW (continuous wave) tone at Fs/4 (350 kHz) is used for carrier frequen
 The tone is offset from DC to avoid carrier leakage in the AD9361 direct-conversion receiver.
 
 - **TX**: 128 samples of Fs/4 tone (0.25 cyc/samp) + 16-sample zero guard transmitted before each OFDM frame
-- **RX**: While in SEEKPLCP state, a two-stage autocorrelation detects the tone and estimates CFO:
+- **RX**: While in SEEKPLCP state, a two-stage autocorrelation detects the tone and estimates CFO.
+  Detection arms when the metric crosses the threshold, then waits for window power to stop
+  rising (tone fully in the window) before estimating; estimating at the first crossing used
+  only ~10% tone and was off by kHz:
   - Stage 1 (coarse): lag-4, capture range ±175 kHz
   - Stage 2 (fine): lag-64 on de-rotated signal, refines residual
   - At f_tone=0.25, both `0.25*4=1` and `0.25*64=16` are integers, so the tone
@@ -191,8 +203,21 @@ cd tests && make check
 - Self-contained C tests using a minimal assert-based harness (`test_harness.h`)
 - Each test file `#include`s the `.c` under test directly, allowing access to `static` functions
 - No external dependencies beyond the standard library and `-lm`
-- Tests: `test_crc`, `test_tcp_subs`, `test_timers`, `test_cw_tone`, `test_cw_tone_channel`
+- Tests: `test_crc`, `test_tcp_subs`, `test_timers`, `test_cw_tone`, `test_cw_tone_channel`, `test_cw_cfo_detection`, `test_channel_model`, `test_ofdm` (needs liquid-dsp/fftw)
 - CI runs these first; build proceeds only if all pass
+
+### RF channel simulator (`sim/`)
+```bash
+make -C sim                                  # charon_sim + rfchan (host gcc, libzmq)
+python3 sim/run_scenarios.py --quick         # CI scenario subset, no root
+sudo sim/netns_run.sh                        # full stack: netns + TAP + ping/iperf3
+```
+- `charon_sim` links `pluto.c` (unmodified) against `sim/iio_zmq.c`, a fake libiio talking to `rfchan`
+- `rfchan` models CFO/SFO from per-node oscillators (incl. DCXO / `xo_correction` / ext refclk),
+  noise, path loss, multipath, phase noise, DC, IQ imbalance, LO leakage, interferers, AGC, ADC
+- Ground truth (true CFO/SFO/SNR, DCXO codes) in `sim/runs/<scenario>/gt.jsonl`
+- `--pluto-test` passes in the simulator with `node.0.self_isolation_db=50`
+- See `sim/README.md` for config keys and model assumptions
 
 ### Example programs (`example/` directory)
 - `ofdm_loopback_example` — validates OFDM TX/RX in loopback without RF (uses QAM-16)
@@ -212,6 +237,7 @@ cd tests && make check
 ### CI (`.github/workflows/nomod.yml`)
 - GitHub Actions on ubuntu-24.04
 - **Stage 1**: Builds and runs unit tests (`cd tests && make check`)
+- **rf-sim** (after tests pass): builds the simulator, runs `run_scenarios.py --quick` and a 3-node `netns_run.sh`
 - **Stage 2** (after tests pass): Cross-compiles charon binary with full toolchain
 - **Stage 3**: Builds full PlutoSDR firmware image
 - Applies `buildroot_static_libs.patch` to buildroot before building
@@ -220,7 +246,7 @@ cd tests && make check
 
 ## Runtime Configuration
 
-All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`). Unset variables fall back to compiled-in defaults:
+All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-device, read via `fw_printenv` in `config.c`; `CHARON_ENV_FILE=<file>` reads `key=value` lines from a file instead). Unset variables fall back to compiled-in defaults:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -241,6 +267,8 @@ All parameters stored in PlutoSDR u-boot environment (set via `fw_setenv` on-dev
 | `max_tcp_share_backoff` | `symbol_delay_timeout * 12` | Max backoff for TCP connection sharing |
 | `dcxo_ppb_per_lsb` | 2.5 | DCXO fine-tune gain in ppb per `dcxo_tune_fine` LSB; sign = direction (positive: larger code raises frequency). Measure per board |
 | `ipaddr` | (from usb0) | Override mesh-bridge IP address |
+| `no_batman` | 0 | 1 = no batman-adv: ofdm0 is a plain L2 link, next hop = destination MAC (simulator) |
+| `cpu_mask` | 2 | `taskset` mask charon pins itself to; 0 = don't pin |
 
 Set defaults on-device with: `sh /root/set_charon_env.sh`
 
