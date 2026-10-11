@@ -824,6 +824,7 @@ int main(int argc, char **argv) {
   const double tick_s = SIM_CHUNK / SIM_FS_NOMINAL;
   double t_start = now_s(), t_next = t_start, t_report = 1.0;
   long overruns = 0;
+  double max_lag = 0;
   zmq_msg_t m;
   zmq_msg_init(&m);
   while (!stop) {
@@ -848,9 +849,14 @@ int main(int argc, char **argv) {
 
     tick();
     t_next += tick_s;
-    if (now - t_next > 0.05) {      // fell >50 ms behind: resync, count it
+    // Behind real time: catch up tick by tick (no samples lost, nodes just
+    // see a latency hiccup).  Only if hopelessly behind, resync and count
+    // it -- that drops channel time and is reported as an overrun.
+    double lag = now - t_next;
+    if (lag > max_lag) max_lag = lag;
+    if (lag > 1.0) {
       overruns++;
-      fprintf(stderr, "rfchan: overrun at t=%.2f s, %.0f ms behind real time\n", sim_t(), (now - t_next) * 1e3);
+      fprintf(stderr, "rfchan: overrun at t=%.2f s, %.0f ms behind real time, resyncing\n", sim_t(), lag * 1e3);
       t_next = now;
     }
     if (sim_t() >= t_report) {
@@ -860,7 +866,8 @@ int main(int argc, char **argv) {
     if (duration_s > 0 && sim_t() >= duration_s) break;
   }
   zmq_msg_close(&m);
-  fprintf(stderr, "rfchan: done, %.1f s simulated, %ld overruns\n", sim_t(), overruns);
+  fprintf(stderr, "rfchan: done, %.1f s simulated, %ld overruns, max lag %.1f ms\n",
+          sim_t(), overruns, max_lag * 1e3);
   if (gt) fclose(gt);
   zmq_close(zpull);
   zmq_close(zpub);
