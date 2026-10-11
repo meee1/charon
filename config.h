@@ -15,6 +15,7 @@ extern int max_long_retrans;
 extern int max_short_retrans;
 extern int bat_ogm_interval;
 extern int enable_charon;
+extern double dcxo_ppb_per_lsb;
 extern double ref_correction_ppm;
 extern char usb_ip[16];
 extern uint32_t usb_ip32;

@@ -41,6 +41,7 @@
 #define DEFAULT_MAX_LONG_RETRANS 1 
 #define DEFAULT_BCAST_RETRANS 1
 #define DEFAULT_USB_BATMAN_IF 0
+#define DEFAULT_DCXO_PPB_PER_LSB 2.5
 #define DEFAULT_ACK_DELAY_TIMEOUT 25000 
 #define DEFAULT_SYMBOL_DELAY ((OFDM_M+CP_LEN+TAPER_LEN)*2)
 #define DEFAULT_MAX_TCP_SHARE_BACKOFF (DEFAULT_SYMBOL_DELAY*12); 
@@ -55,6 +56,7 @@ static char cmd_str[128];
 
 //define with fw_set_attr.  these values will be set/reset in init
 double ref_correction_ppm;
+double dcxo_ppb_per_lsb;
 int enable_charon;
 int bat_ogm_interval;
 int max_short_retrans;
@@ -196,6 +198,18 @@ void read_config() {
   else {
     max_tcp_segs = DEFAULT_MAX_TCP_SEGS; 
     fprintf(stderr, "\ncould not find max_tcp_segs in u-boot env.  setting to default of %d", max_tcp_segs);
+  }
+
+  //AD936x DCXO fine-tune gain (ppb per dcxo_tune_fine LSB).  Sign gives the
+  //direction: positive means a larger code raises the frequency.
+  memset(cmd_str, 0x00, sizeof(cmd_str));
+  if( read_fw_attr_value("dcxo_ppb_per_lsb", cmd_str, 128) == 0) {  
+    dcxo_ppb_per_lsb = (double) atof(cmd_str);
+    fprintf(stderr, "\nsetting dcxo_ppb_per_lsb to %.3f", dcxo_ppb_per_lsb);
+  }
+  else {
+    dcxo_ppb_per_lsb = DEFAULT_DCXO_PPB_PER_LSB; 
+    fprintf(stderr, "\ncould not find dcxo_ppb_per_lsb in u-boot env.  setting to default of %.3f", dcxo_ppb_per_lsb);
   }
 
   //is the usb interface batman enabled?
